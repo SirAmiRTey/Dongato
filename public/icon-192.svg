@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#141d38" />
+      <stop offset="100%" stop-color="#0b132b" />
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#064e3b" stop-opacity="0" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#10b981" flood-opacity="0.25" />
+    </filter>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="192" height="192" rx="48" fill="url(#bgGrad)" />
+  <rect width="190" height="190" x="1" y="1" rx="47" fill="none" stroke="#334155" stroke-width="2" stroke-opacity="0.6" />
+
+  <!-- Ambient Glow -->
+  <circle cx="96" cy="96" r="64" fill="url(#glowGrad)" />
+
+  <!-- Center Badge -->
+  <rect x="40" y="40" width="112" height="112" rx="32" fill="url(#emeraldGrad)" filter="url(#shadow)" />
+
+  <!-- Inner Subtle Accent -->
+  <rect x="42" y="42" width="108" height="108" rx="30" fill="none" stroke="#a7f3d0" stroke-width="1.5" stroke-opacity="0.4" />
+
+  <!-- Persian 'د' (Dongato) Calligraphic / Typographic representation -->
+  <text
+    x="96"
+    y="114"
+    font-family="Vazirmatn, Tahoma, sans-serif"
+    font-size="72"
+    font-weight="900"
+    text-anchor="middle"
+    fill="#091428"
+    letter-spacing="-1"
+  >د</text>
+
+  <!-- Split/Coin accent dot in top right -->
+  <circle cx="132" cy="60" r="7" fill="#f8fafc" opacity="0.9" />
+</svg>
