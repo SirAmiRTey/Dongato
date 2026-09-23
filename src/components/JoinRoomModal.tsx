@@ -18,6 +18,8 @@ interface JoinRoomModalProps {
   onClose?: () => void;
   canClose?: boolean;
   initialInviteCode?: string;
+  userId?: string;
+  defaultDisplayName?: string;
   onSuccess: (room: Room, member: Member) => void;
 }
 
@@ -26,15 +28,23 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
   onClose,
   canClose = false,
   initialInviteCode = '',
+  userId,
+  defaultDisplayName = '',
   onSuccess,
 }) => {
   const modalTitleId = useId();
   const [tab, setTab] = useState<'join' | 'create'>('join');
-  const [displayName, setDisplayName] = useState('');
+  const [displayName, setDisplayName] = useState(defaultDisplayName);
   const [inviteCode, setInviteCode] = useState(initialInviteCode);
   const [roomName, setRoomName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (defaultDisplayName && !displayName) {
+      setDisplayName(defaultDisplayName);
+    }
+  }, [defaultDisplayName]);
 
   useEffect(() => {
     if (initialInviteCode) {
@@ -60,7 +70,7 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
     setError(null);
 
     try {
-      const { room, member } = await joinRoom(inviteCode, displayName.trim());
+      const { room, member } = await joinRoom(inviteCode, displayName.trim(), userId);
       onSuccess(room, member);
     } catch (err: any) {
       setError(err?.message || 'خطا در ورود به اتاق');
@@ -84,7 +94,7 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
     setError(null);
 
     try {
-      const { room, member } = await createRoom(roomName.trim(), displayName.trim());
+      const { room, member } = await createRoom(roomName.trim(), displayName.trim(), userId);
       onSuccess(room, member);
     } catch (err: any) {
       setError(err?.message || 'خطا در ایجاد اتاق');

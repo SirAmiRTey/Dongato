@@ -22,6 +22,8 @@ import type {
   Settlement,
   ActivityLog,
   ExpenseCategory,
+  AuthUser,
+  UserRoomMembership,
 } from './types';
 import {
   initialRoom,
@@ -38,6 +40,7 @@ import {
 } from './lib/calculations';
 import {
   fetchRoomBundle,
+  fetchUserRooms,
   createExpenseApi,
   updateExpenseApi,
   deleteExpenseApi,
@@ -48,6 +51,11 @@ import {
   deactivateMemberApi,
   STORAGE_KEYS,
 } from './services/api';
+import {
+  getInitialAuthUser,
+  subscribeToAuthChanges,
+  signOutUser,
+} from './services/auth';
 import { useRoomSubscription } from './services/realtime';
 import { RoomHeader } from './components/RoomHeader';
 import { AddExpenseModal } from './components/AddExpenseModal';
@@ -59,6 +67,8 @@ import { PairwiseBreakdown } from './components/PairwiseBreakdown';
 import { ActivityFeed } from './components/ActivityFeed';
 import { JoinRoomModal } from './components/JoinRoomModal';
 import { RoomSettingsModal } from './components/RoomSettingsModal';
+import { AuthModal } from './components/AuthModal';
+import { MyRoomsModal } from './components/MyRoomsModal';
 import { exportExpensesToCSV } from './lib/export';
 
 export function App() {
@@ -69,10 +79,13 @@ export function App() {
   const [settlements, setSettlements] = useState<Settlement[]>(() => initialSettlements);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => initialActivityLogs);
 
-  // Active view user perspective
-  const [currentUserId, setCurrentUserId] = useState<string>(() => {
-    return localStorage.getItem(STORAGE_KEYS.MEMBER_ID) || 'm1';
-  });
+  // Authentication State
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
+
+  // User Rooms State
+  const [userRooms, setUserRooms] = useState<UserRoomMembership[]>([]);
+  const [isMyRoomsOpen, setIsMyRoomsOpen] = useState<boolean>(false);
 
   const [isLoadingBundle, setIsLoadingBundle] = useState<boolean>(true);
 
@@ -98,11 +111,17 @@ export function App() {
     }, 3500);
   }, []);
 
-  // Sync session changes to localStorage
-  const handleSetCurrentUser = (userId: string) => {
-    setCurrentUserId(userId);
-    localStorage.setItem(STORAGE_KEYS.MEMBER_ID, userId);
-  };
+  // Fetch / Refresh rooms belonging to active user
+  const refreshUserRooms = useCallback(async (userId: string) => {
+    try {
+      const rooms = await fetchUserRooms(userId);
+      setUserRooms(rooms);
+      return rooms;
+    } catch (err) {
+      console.warn('Failed to fetch user rooms:', err);
+      return [];
+    }
+  }, []);
 
   // Load Room Data
   const loadRoom = useCallback(async (roomIdToLoad: string) => {
@@ -114,17 +133,49 @@ export function App() {
       setExpenses(bundle.expenses);
       setSettlements(bundle.settlements);
       setActivityLogs(bundle.activityLogs);
-
-      const exists = bundle.members.some((m) => m.id === currentUserId);
-      if (!exists && bundle.members.length > 0) {
-        handleSetCurrentUser(bundle.members[0].id);
-      }
+      localStorage.setItem(STORAGE_KEYS.ROOM_ID, roomIdToLoad);
     } catch (err: any) {
       showToast(err?.message || 'خطا در بارگذاری اطلاعات اتاق', 'error');
     } finally {
       setIsLoadingBundle(false);
     }
-  }, [currentUserId, showToast]);
+  }, [showToast]);
+
+  // Authentication Listener & Session Recovery
+  useEffect(() => {
+    let mounted = true;
+    getInitialAuthUser()
+      .then((user) => {
+        if (mounted) {
+          setAuthUser(user);
+          setIsAuthChecking(false);
+          if (user) {
+            refreshUserRooms(user.id);
+          }
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setIsAuthChecking(false);
+        }
+      });
+
+    const unsubscribe = subscribeToAuthChanges((user) => {
+      if (mounted) {
+        setAuthUser(user);
+        if (user) {
+          refreshUserRooms(user.id);
+        } else {
+          setUserRooms([]);
+        }
+      }
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, [refreshUserRooms]);
 
   // URL ?join=CODE detection & Initial Room Loading
   useEffect(() => {
@@ -138,6 +189,23 @@ export function App() {
     const savedRoomId = localStorage.getItem(STORAGE_KEYS.ROOM_ID) || initialRoom.id;
     loadRoom(savedRoomId);
   }, [loadRoom]);
+
+  // Derive Current User strictly from authenticated session
+  const currentUser = useMemo(() => {
+    if (!authUser) {
+      return members[0] || initialMembers[0];
+    }
+    const matchByUserId = members.find((m) => m.userId === authUser.id);
+    if (matchByUserId) return matchByUserId;
+
+    const matchByName = members.find((m) => m.name === authUser.displayName);
+    if (matchByName) return matchByName;
+
+    return members[0] || initialMembers[0];
+  }, [members, authUser]);
+
+  const currentUserId = currentUser.id;
+  const isAdmin = Boolean(currentUser.isAdmin);
 
   // Realtime Subscription
   const handleRealtimeRefresh = useCallback(
@@ -163,18 +231,36 @@ export function App() {
     setExpenses([]);
     setSettlements([]);
     setActivityLogs([]);
-    handleSetCurrentUser(newMember.id);
     localStorage.setItem(STORAGE_KEYS.ROOM_ID, newRoom.id);
     setIsJoinRoomOpen(false);
     showToast(`شما با موفقیت وارد اتاق «${newRoom.name}» شدید.`);
+    if (authUser) {
+      refreshUserRooms(authUser.id);
+    }
     loadRoom(newRoom.id);
   };
 
-  const currentUser = useMemo(() => {
-    return members.find((m) => m.id === currentUserId) || members[0] || initialMembers[0];
-  }, [members, currentUserId]);
+  // Auth Success Handler
+  const handleAuthSuccess = async (user: AuthUser) => {
+    setAuthUser(user);
+    showToast(`خوش آمدید، ${user.displayName}`);
+    const rooms = await refreshUserRooms(user.id);
+    if (rooms.length === 0) {
+      setIsJoinRoomOpen(true);
+    } else if (rooms.length === 1) {
+      loadRoom(rooms[0].room.id);
+    } else {
+      setIsMyRoomsOpen(true);
+    }
+  };
 
-  const isAdmin = Boolean(currentUser.isAdmin);
+  // Sign Out Handler
+  const handleSignOut = async () => {
+    await signOutUser();
+    setAuthUser(null);
+    setUserRooms([]);
+    showToast('شما از حساب کاربری خود خارج شدید.', 'info');
+  };
 
   // Derive Pairwise direct balances for the active user
   const pairwiseBalances = useMemo(() => {
@@ -237,6 +323,12 @@ export function App() {
   }) => {
     if (!editingExpense) return;
 
+    // Authorization Guard: Only payer or room admin can edit
+    if (editingExpense.paidById !== currentUserId && !isAdmin) {
+      showToast('تنها ثبت‌کننده هزینه یا مدیر اتاق مجاز به ویرایش این هزینه هستند.', 'error');
+      return;
+    }
+
     try {
       const updated = await updateExpenseApi(
         room.id,
@@ -258,6 +350,12 @@ export function App() {
 
   // Handler: Delete expense (Audit Trail)
   const handleDeleteExpense = async (expense: Expense) => {
+    // Authorization Guard: Only payer or room admin can delete
+    if (expense.paidById !== currentUserId && !isAdmin) {
+      showToast('تنها ثبت‌کننده هزینه یا مدیر اتاق مجاز به حذف این هزینه هستند.', 'error');
+      return;
+    }
+
     try {
       await deleteExpenseApi(
         room.id,
@@ -322,6 +420,12 @@ export function App() {
     const settlement = settlements.find((s) => s.id === settlementId);
     if (!settlement) return;
 
+    // Authorization Guard: Only receiver can confirm settlement
+    if (settlement.receiverId !== currentUserId) {
+      showToast('تنها دریافت‌کننده وجه مجاز به تأیید این تسویه است.', 'error');
+      return;
+    }
+
     const payer = members.find((m) => m.id === settlement.payerId);
 
     try {
@@ -364,6 +468,12 @@ export function App() {
   const handleRejectSettlement = async (settlementId: string) => {
     const settlement = settlements.find((s) => s.id === settlementId);
     if (!settlement) return;
+
+    // Authorization Guard: Only receiver can reject settlement
+    if (settlement.receiverId !== currentUserId) {
+      showToast('تنها دریافت‌کننده وجه مجاز به رد این تسویه است.', 'error');
+      return;
+    }
 
     const payer = members.find((m) => m.id === settlement.payerId);
 
@@ -429,15 +539,15 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-[#0b132b] text-slate-100 flex flex-col font-sans pb-safe">
-      {/* Top Header with User Switcher, Room Switcher, & Admin Controls */}
       <RoomHeader
         room={room}
         members={members}
-        currentUserId={currentUserId}
-        onSelectUser={handleSetCurrentUser}
-        onSwitchRoom={() => setIsJoinRoomOpen(true)}
-        onOpenAdminSettings={() => setIsRoomSettingsOpen(true)}
+        currentUser={currentUser}
+        authUser={authUser}
+        onOpenMyRooms={() => setIsMyRoomsOpen(true)}
+        onOpenAdminSettings={isAdmin ? () => setIsRoomSettingsOpen(true) : undefined}
         onExportCSV={() => exportExpensesToCSV(expenses, members, room.name)}
+        onSignOut={handleSignOut}
       />
 
       {/* Main Content */}
@@ -764,12 +874,33 @@ export function App() {
         onRequestSettlement={handleRequestSettlement}
       />
 
+      {/* Authentication Modal (Gated when no active session) */}
+      <AuthModal
+        isOpen={!isAuthChecking && !authUser}
+        canClose={false}
+        onSuccess={handleAuthSuccess}
+      />
+
+      {/* My Rooms Switcher Modal */}
+      <MyRoomsModal
+        isOpen={isMyRoomsOpen}
+        onClose={() => setIsMyRoomsOpen(false)}
+        userRooms={userRooms}
+        activeRoomId={room.id}
+        onSelectRoom={(roomId) => loadRoom(roomId)}
+        onOpenCreateRoom={() => setIsJoinRoomOpen(true)}
+        onOpenJoinRoom={() => setIsJoinRoomOpen(true)}
+        userName={authUser?.displayName || currentUser.name}
+      />
+
       {/* Join / Create Room Modal */}
       <JoinRoomModal
         isOpen={isJoinRoomOpen}
         onClose={() => setIsJoinRoomOpen(false)}
-        canClose={true}
+        canClose={Boolean(room.id)}
         initialInviteCode={initialJoinCode}
+        userId={authUser?.id}
+        defaultDisplayName={authUser?.displayName}
         onSuccess={handleRoomSuccess}
       />
 

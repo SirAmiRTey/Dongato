@@ -2,37 +2,37 @@ import React, { useState } from 'react';
 import {
   Copy,
   Check,
-  UserCheck,
   LogOut,
   Cloud,
   Database,
   Shield,
   Download,
+  DoorOpen,
 } from 'lucide-react';
-import type { Room, Member } from '../types';
+import type { Room, Member, AuthUser } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
 
 interface RoomHeaderProps {
   room: Room;
   members: Member[];
-  currentUserId: string;
-  onSelectUser: (userId: string) => void;
-  onSwitchRoom: () => void;
+  currentUser: Member;
+  authUser: AuthUser | null;
+  onOpenMyRooms: () => void;
   onOpenAdminSettings?: () => void;
   onExportCSV?: () => void;
+  onSignOut: () => void;
 }
 
 export const RoomHeader: React.FC<RoomHeaderProps> = ({
   room,
-  members,
-  currentUserId,
-  onSelectUser,
-  onSwitchRoom,
+  currentUser,
+  authUser,
+  onOpenMyRooms,
   onOpenAdminSettings,
   onExportCSV,
+  onSignOut,
 }) => {
   const [copiedCode, setCopiedCode] = useState(false);
-  const currentUser = members.find((m) => m.id === currentUserId);
   const isAdmin = Boolean(currentUser?.isAdmin);
 
   const handleCopyInvite = () => {
@@ -41,11 +41,14 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
+  const displayName = authUser?.displayName || currentUser?.name || 'کاربر دنگاتو';
+  const initialLetter = displayName.slice(0, 1) || '؟';
+
   return (
     <header className="bg-[#141d38]/90 backdrop-blur-md border-b border-slate-700/60 sticky top-0 z-40">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3.5">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          {/* Logo & Room Title */}
+          {/* Left: Logo & Room Title */}
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-emerald-500/20 shrink-0">
               <span className="text-xl">د</span>
@@ -89,7 +92,7 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
             </div>
           </div>
 
-          {/* Right: Admin Button, User Switcher & Room Exit */}
+          {/* Right: Actions, Authenticated User Pill & Logout */}
           <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
             {/* CSV Financial Export CTA */}
             {onExportCSV && (
@@ -100,7 +103,7 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
                 title="دانلود گزارش مالی اتاق (CSV)"
               >
                 <Download className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="hidden sm:inline">گزارش مالی (CSV)</span>
+                <span className="hidden sm:inline">گزارش مالی</span>
               </button>
             )}
 
@@ -113,39 +116,50 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
                 title="پنل مدیریت اتاق"
               >
                 <Shield className="w-3.5 h-3.5 text-amber-400" />
-                <span>مدیریت اتاق</span>
+                <span className="hidden md:inline">مدیریت</span>
               </button>
             )}
 
-            {/* User Switcher Dropdown */}
-            <div className="flex items-center gap-2 bg-[#0b132b] p-1.5 rounded-xl border border-slate-700/70">
-              <div className="flex items-center gap-1.5 px-1.5 text-xs text-slate-400">
-                <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="hidden sm:inline">دیدگاه:</span>
-              </div>
-
-              <select
-                value={currentUserId}
-                onChange={(e) => onSelectUser(e.target.value)}
-                className="bg-[#141d38] border border-slate-700 text-white rounded-lg px-2.5 py-1 text-xs font-semibold focus:outline-none focus:border-emerald-500 cursor-pointer"
-              >
-                {members.map((m) => (
-                  <option key={m.id} value={m.id} className="bg-[#141d38]">
-                    {m.name} {m.isAdmin ? '👑' : ''} {!m.isActive ? '❌' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Switch / Exit Room Button */}
+            {/* "My Rooms" Switcher Button */}
             <button
               type="button"
-              onClick={onSwitchRoom}
-              className="flex items-center gap-1 px-2.5 py-2 text-xs rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-              title="تغییر یا ورود به اتاق دیگر"
+              onClick={onOpenMyRooms}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/80 text-xs font-bold transition-colors"
+              title="مشاهده و تغییر اتاق‌ها"
             >
-              <LogOut className="w-3.5 h-3.5 text-slate-400" />
-              <span className="hidden md:inline">تغییر اتاق</span>
+              <DoorOpen className="w-3.5 h-3.5 text-emerald-400" />
+              <span>اتاق‌های من</span>
+            </button>
+
+            {/* Authenticated User Identity Pill (Strict - No Dropdown Switcher) */}
+            <div className="flex items-center gap-2 bg-[#0b132b] px-2.5 py-1 rounded-xl border border-slate-700/80">
+              <div
+                className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black text-white bg-gradient-to-tr ${
+                  currentUser?.color || 'from-emerald-500 to-teal-600'
+                }`}
+              >
+                {initialLetter}
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-bold text-white max-w-[90px] sm:max-w-[120px] truncate">
+                  {displayName}
+                </span>
+                {isAdmin && (
+                  <span className="text-[10px]" title="مدیر اتاق">
+                    👑
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Sign Out CTA */}
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="flex items-center gap-1 p-2 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-slate-700/80 transition-colors"
+              title="خروج از حساب کاربری"
+            >
+              <LogOut className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>

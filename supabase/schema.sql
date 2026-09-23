@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS rooms (
 CREATE TABLE IF NOT EXISTS members (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     name TEXT NOT NULL,
     avatar_url TEXT,
     color TEXT,
@@ -34,6 +35,17 @@ CREATE TABLE IF NOT EXISTS members (
     bank_name TEXT,
     joined_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Idempotent column check for existing members table
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'members' AND column_name = 'user_id'
+    ) THEN
+        ALTER TABLE members ADD COLUMN user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+    END IF;
+END $$;
 
 -- Deferred constraint for rooms.created_by -> members.id
 DO $$
@@ -117,6 +129,7 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 -- ------------------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_rooms_invite_code ON rooms(invite_code);
 CREATE INDEX IF NOT EXISTS idx_members_room_id ON members(room_id);
+CREATE INDEX IF NOT EXISTS idx_members_user_id ON members(user_id);
 CREATE INDEX IF NOT EXISTS idx_expenses_room_id_created_at ON expenses(room_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_splits_expense_id ON splits(expense_id);
 CREATE INDEX IF NOT EXISTS idx_splits_member_id ON splits(member_id);

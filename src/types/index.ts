@@ -17,9 +17,23 @@ export interface Room {
   description?: string;
 }
 
+export interface AuthUser {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string;
+}
+
+export interface UserRoomMembership {
+  room: Room;
+  member: Member;
+  membersCount: number;
+}
+
 export interface Member {
   id: string;
   roomId: string;
+  userId?: string;
   name: string;
   avatarUrl?: string;
   color?: string;
