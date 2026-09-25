@@ -3,53 +3,77 @@ import type { AuthUser } from '../types';
 
 export const AUTH_STORAGE_KEY = 'dongato_auth_user';
 
+type AuthListener = (user: AuthUser | null) => void;
+const listeners = new Set<AuthListener>();
+
 /**
- * Translates Supabase auth errors into friendly Persian explanations.
+ * Notifies all active session listeners of auth changes.
+ */
+export function notifyAuthStateChange(user: AuthUser | null): void {
+  listeners.forEach((callback) => {
+    try {
+      callback(user);
+    } catch (err) {
+      console.error('Error in auth state listener:', err);
+    }
+  });
+}
+
+/**
+ * Translates PostgreSQL/PostgREST error messages into friendly Persian explanations.
  */
 export function getPersianAuthErrorMessage(error: any): string {
   if (!error) return 'خطایی رخ داد. لطفاً مجدداً تلاش کنید.';
-  const message = (error.message || '').toLowerCase();
+  const message = (error.message || (typeof error === 'string' ? error : '')).toString();
 
-  if (message.includes('invalid login credentials') || message.includes('invalid credentials')) {
+  // If the error message is already in Persian (from PostgreSQL RPC), return it directly
+  if (/[\u0600-\u06FF]/.test(message)) {
+    return message;
+  }
+
+  const lower = message.toLowerCase();
+  if (
+    lower.includes('invalid login credentials') ||
+    lower.includes('invalid credentials') ||
+    lower.includes('wrong password')
+  ) {
     return 'ایمیل یا رمز عبور وارد شده نادرست است.';
   }
-  if (message.includes('user already registered') || message.includes('already exists')) {
+  if (
+    lower.includes('user already registered') ||
+    lower.includes('already exists') ||
+    lower.includes('duplicate key') ||
+    lower.includes('unique constraint')
+  ) {
     return 'حسابی با این ایمیل از قبل ثبت‌نام شده است. لطفاً وارد شوید.';
   }
-  if (message.includes('password should be at least 6 characters') || message.includes('weak password')) {
+  if (
+    lower.includes('password should be at least 6 characters') ||
+    lower.includes('weak password')
+  ) {
     return 'رمز عبور باید حداقل ۶ کاراکتر باشد.';
   }
-  if (message.includes('invalid email') || message.includes('email address')) {
-    return 'فرمت ایمیل نامعتبر است.';
+  if (lower.includes('invalid email') || lower.includes('email address')) {
+    return 'فرمت آدرس ایمیل نامعتبر است.';
   }
-  if (message.includes('network') || message.includes('fetch')) {
+  if (lower.includes('network') || lower.includes('fetch') || lower.includes('failed to fetch')) {
     return 'خطای اتصال به شبکه. لطفاً وضعیت اینترنت خود را بررسی کنید.';
   }
-  if (message.includes('email not confirmed')) {
-    return 'ایمیل شما هنوز تأیید نشده است. لطفاً صندوق ایمیل خود را بررسی کنید.';
+  if (
+    lower.includes('unexpected token') ||
+    lower.includes('<html>') ||
+    lower.includes('<!doctype')
+  ) {
+    return 'پاسخ نامعتبر از سرور دریافت شد. لطفاً اتصال سرور و پایگاه داده را بررسی کنید.';
   }
-  return error.message || 'خطا در احراز هویت. لطفاً مجدداً امتحان کنید.';
+
+  return message || 'خطا در احراز هویت. لطفاً مجدداً امتحان کنید.';
 }
 
 /**
- * Helper to convert Supabase User object to our app's AuthUser
+ * Sign Up with Email and Password using PostgreSQL + PostgREST RPC (`signup`)
  */
-function toAuthUser(user: any): AuthUser {
-  return {
-    id: user.id,
-    email: user.email || '',
-    displayName:
-      user.user_metadata?.full_name ||
-      user.user_metadata?.displayName ||
-      user.email?.split('@')[0] ||
-      'هم‌اتاقی',
-  };
-}
-
-/**
- * Sign Up with Email and Password
- */
-export async function signUp(
+export async function signUpWithEmail(
   email: string,
   password: string,
   displayName: string
@@ -58,28 +82,33 @@ export async function signUp(
   const cleanName = displayName.trim();
 
   if (isSupabaseConfigured && supabase) {
-    const { data, error } = await supabase.auth.signUp({
-      email: cleanEmail,
-      password,
-      options: {
-        data: {
-          full_name: cleanName,
-        },
-      },
-    });
+    try {
+      const { data, error } = await supabase.rpc('signup', {
+        p_name: cleanName,
+        p_email: cleanEmail,
+        p_password: password,
+      });
 
-    if (error) {
-      throw new Error(getPersianAuthErrorMessage(error));
+      if (error) {
+        throw new Error(getPersianAuthErrorMessage(error));
+      }
+
+      if (!data) {
+        throw new Error('ثبت‌نام انجام نشد. لطفاً مجدداً تلاش نمایید.');
+      }
+
+      const authUser: AuthUser = {
+        id: String(data.id),
+        email: String(data.email || cleanEmail),
+        displayName: String(data.displayName || data.display_name || cleanName),
+      };
+
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
+      notifyAuthStateChange(authUser);
+      return authUser;
+    } catch (err: any) {
+      throw new Error(getPersianAuthErrorMessage(err));
     }
-
-    if (!data.user) {
-      throw new Error('ثبت‌نام انجام نشد. لطفاً مجدداً تلاش نمایید.');
-    }
-
-    const authUser = toAuthUser(data.user);
-    // Cache for offline resilience
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
-    return authUser;
   }
 
   // Offline / LocalStorage Mock Authentication Fallback
@@ -89,32 +118,48 @@ export async function signUp(
     displayName: cleanName,
   };
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockUser));
+  notifyAuthStateChange(mockUser);
   return mockUser;
 }
 
 /**
- * Sign In with Email and Password
+ * Sign In with Email and Password using PostgreSQL + PostgREST RPC (`login`)
  */
-export async function signIn(email: string, password: string): Promise<AuthUser> {
+export async function signInWithEmail(
+  email: string,
+  password: string
+): Promise<AuthUser> {
   const cleanEmail = email.trim().toLowerCase();
 
   if (isSupabaseConfigured && supabase) {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: cleanEmail,
-      password,
-    });
+    try {
+      const { data, error } = await supabase.rpc('login', {
+        p_email: cleanEmail,
+        p_password: password,
+      });
 
-    if (error) {
-      throw new Error(getPersianAuthErrorMessage(error));
+      if (error) {
+        throw new Error(getPersianAuthErrorMessage(error));
+      }
+
+      if (!data) {
+        throw new Error('ایمیل یا رمز عبور اشتباه است.');
+      }
+
+      const authUser: AuthUser = {
+        id: String(data.id),
+        email: String(data.email || cleanEmail),
+        displayName: String(
+          data.displayName || data.display_name || cleanEmail.split('@')[0]
+        ),
+      };
+
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
+      notifyAuthStateChange(authUser);
+      return authUser;
+    } catch (err: any) {
+      throw new Error(getPersianAuthErrorMessage(err));
     }
-
-    if (!data.user) {
-      throw new Error('ورود ناموفق بود.');
-    }
-
-    const authUser = toAuthUser(data.user);
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
-    return authUser;
   }
 
   // Offline / LocalStorage Mock Authentication Fallback
@@ -123,6 +168,7 @@ export async function signIn(email: string, password: string): Promise<AuthUser>
     try {
       const parsed = JSON.parse(saved);
       if (parsed.email === cleanEmail) {
+        notifyAuthStateChange(parsed);
         return parsed;
       }
     } catch {
@@ -136,50 +182,34 @@ export async function signIn(email: string, password: string): Promise<AuthUser>
     displayName: cleanEmail.split('@')[0],
   };
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockUser));
+  notifyAuthStateChange(mockUser);
   return mockUser;
 }
+
+// Aliases for backwards compatibility with existing components
+export const signUp = signUpWithEmail;
+export const signIn = signInWithEmail;
 
 /**
  * Sign Out active session
  */
 export async function signOut(): Promise<void> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      await supabase.auth.signOut();
-    } catch (err) {
-      console.warn('Supabase signOut error:', err);
-    }
-  }
   localStorage.removeItem(AUTH_STORAGE_KEY);
+  notifyAuthStateChange(null);
 }
 
 /**
- * Get current active authenticated user
+ * Get current active authenticated user from storage
  */
 export async function getCurrentUser(): Promise<AuthUser | null> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data } = await supabase.auth.getUser();
-      if (data?.user) {
-        const authUser = toAuthUser(data.user);
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
-        return authUser;
-      }
-    } catch (err) {
-      console.warn('Error fetching supabase user:', err);
-    }
-  }
-
-  // Check localStorage fallback
   const saved = localStorage.getItem(AUTH_STORAGE_KEY);
   if (saved) {
     try {
-      return JSON.parse(saved);
+      return JSON.parse(saved) as AuthUser;
     } catch {
       return null;
     }
   }
-
   return null;
 }
 
@@ -187,30 +217,13 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
  * Listen to auth state transitions
  */
 export function onAuthStateChange(callback: (user: AuthUser | null) => void): () => void {
-  if (isSupabaseConfigured && supabase) {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        const authUser = toAuthUser(session.user);
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
-        callback(authUser);
-      } else {
-        localStorage.removeItem(AUTH_STORAGE_KEY);
-        callback(null);
-      }
-    });
+  listeners.add(callback);
 
-    return () => {
-      subscription.unsubscribe();
-    };
-  }
-
-  // Offline mock event listener (storage events or initial sync)
-  const initial = localStorage.getItem(AUTH_STORAGE_KEY);
-  if (initial) {
+  // Synchronously emit current cached state to avoid flash of login modal
+  const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+  if (saved) {
     try {
-      callback(JSON.parse(initial));
+      callback(JSON.parse(saved));
     } catch {
       callback(null);
     }
@@ -218,6 +231,7 @@ export function onAuthStateChange(callback: (user: AuthUser | null) => void): ()
     callback(null);
   }
 
+  // Listen to changes across browser tabs
   const handleStorage = (e: StorageEvent) => {
     if (e.key === AUTH_STORAGE_KEY) {
       if (e.newValue) {
@@ -234,6 +248,7 @@ export function onAuthStateChange(callback: (user: AuthUser | null) => void): ()
 
   window.addEventListener('storage', handleStorage);
   return () => {
+    listeners.delete(callback);
     window.removeEventListener('storage', handleStorage);
   };
 }

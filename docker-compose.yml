@@ -14,6 +14,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-roles.sql:/docker-entrypoint-initdb.d/00-roles.sql:ro
       - ./supabase/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./scripts/auth-rpc.sql:/docker-entrypoint-initdb.d/02-auth-rpc.sql:ro
     networks:
       - dongato-network
     healthcheck:

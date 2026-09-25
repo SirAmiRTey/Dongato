@@ -17,9 +17,9 @@ export const isSupabaseConfigured: boolean = Boolean(
 export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
-        persistSession: true, // Persist user auth sessions across browser reloads
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
+        persistSession: false, // Managed natively via localStorage & RPC
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
       },
     })
   : null;
