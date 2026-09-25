@@ -8,8 +8,8 @@ dist-ssr/
 
 # Environment Variables & Secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # AI & Agent metadata
 .antigravity/

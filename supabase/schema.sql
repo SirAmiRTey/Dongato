@@ -147,29 +147,48 @@ ALTER TABLE settlements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_logs ENABLE ROW LEVEL SECURITY;
 
 -- Permissive public policies for anonymous room access
+DROP POLICY IF EXISTS "Public read on rooms" ON rooms;
 CREATE POLICY "Public read on rooms" ON rooms FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Public insert on rooms" ON rooms;
 CREATE POLICY "Public insert on rooms" ON rooms FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Public update on rooms" ON rooms;
 CREATE POLICY "Public update on rooms" ON rooms FOR UPDATE USING (true);
 
+DROP POLICY IF EXISTS "Public read on members" ON members;
 CREATE POLICY "Public read on members" ON members FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Public insert on members" ON members;
 CREATE POLICY "Public insert on members" ON members FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Public update on members" ON members;
 CREATE POLICY "Public update on members" ON members FOR UPDATE USING (true);
 
+DROP POLICY IF EXISTS "Public read on expenses" ON expenses;
 CREATE POLICY "Public read on expenses" ON expenses FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Public insert on expenses" ON expenses;
 CREATE POLICY "Public insert on expenses" ON expenses FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Public update on expenses" ON expenses;
 CREATE POLICY "Public update on expenses" ON expenses FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Public delete on expenses" ON expenses;
 CREATE POLICY "Public delete on expenses" ON expenses FOR DELETE USING (true);
 
+DROP POLICY IF EXISTS "Public read on splits" ON splits;
 CREATE POLICY "Public read on splits" ON splits FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Public insert on splits" ON splits;
 CREATE POLICY "Public insert on splits" ON splits FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Public update on splits" ON splits;
 CREATE POLICY "Public update on splits" ON splits FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Public delete on splits" ON splits;
 CREATE POLICY "Public delete on splits" ON splits FOR DELETE USING (true);
 
+DROP POLICY IF EXISTS "Public read on settlements" ON settlements;
 CREATE POLICY "Public read on settlements" ON settlements FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Public insert on settlements" ON settlements;
 CREATE POLICY "Public insert on settlements" ON settlements FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Public update on settlements" ON settlements;
 CREATE POLICY "Public update on settlements" ON settlements FOR UPDATE USING (true);
 
+DROP POLICY IF EXISTS "Public read on activity_logs" ON activity_logs;
 CREATE POLICY "Public read on activity_logs" ON activity_logs FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Public insert on activity_logs" ON activity_logs;
 CREATE POLICY "Public insert on activity_logs" ON activity_logs FOR INSERT WITH CHECK (true);
 
 -- ------------------------------------------------------------------------------
@@ -193,6 +212,31 @@ END $$;
 -- ------------------------------------------------------------------------------
 -- 7. Supabase Storage: 'receipts' Bucket & RLS
 -- ------------------------------------------------------------------------------
+-- Ensure storage schema and tables exist in self-hosted Postgres environments
+CREATE SCHEMA IF NOT EXISTS storage;
+CREATE TABLE IF NOT EXISTS storage.buckets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    public BOOLEAN DEFAULT false,
+    file_size_limit BIGINT,
+    allowed_mime_types TEXT[]
+);
+CREATE TABLE IF NOT EXISTS storage.objects (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bucket_id TEXT REFERENCES storage.buckets(id),
+    name TEXT,
+    owner UUID,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    last_accessed_at TIMESTAMPTZ DEFAULT now(),
+    metadata JSONB
+);
+ALTER TABLE storage.buckets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+GRANT USAGE ON SCHEMA storage TO anon, authenticated;
+GRANT ALL ON ALL TABLES IN SCHEMA storage TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA storage GRANT ALL ON TABLES TO anon, authenticated;
+
 -- Create the public receipts storage bucket if it does not exist
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
