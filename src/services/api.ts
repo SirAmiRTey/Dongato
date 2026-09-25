@@ -6,7 +6,6 @@ import type {
   Settlement,
   ActivityLog,
   ExpenseCategory,
-  UserRoomMembership,
 } from '../types';
 import {
   initialRoom,
@@ -20,7 +19,6 @@ import { formatToman } from '../lib/calculations';
 export const STORAGE_KEYS = {
   ROOM_ID: 'dongato_active_room_id',
   MEMBER_ID: 'dongato_active_member_id',
-  USER_ROOMS_PREFIX: 'dongato_user_rooms_',
 } as const;
 
 /**
@@ -68,24 +66,6 @@ function saveLocalFallbackState(bundle: RoomBundle): void {
   localStorage.setItem('dongato_fallback_bundle', JSON.stringify(bundle));
 }
 
-function addRoomToUserLocalCache(
-  userId: string,
-  room: Room,
-  member: Member,
-  membersCount = 1
-): void {
-  try {
-    const key = `${STORAGE_KEYS.USER_ROOMS_PREFIX}${userId}`;
-    const saved = localStorage.getItem(key);
-    let list: UserRoomMembership[] = saved ? JSON.parse(saved) : [];
-    list = list.filter((item) => item.room.id !== room.id);
-    list.unshift({ room, member, membersCount });
-    localStorage.setItem(key, JSON.stringify(list));
-  } catch {
-    // Ignore storage issues
-  }
-}
-
 // ==============================================================================
 // 1. Room Creation
 // ==============================================================================
@@ -117,11 +97,11 @@ export async function createRoom(
       .from('members')
       .insert({
         room_id: roomData.id,
-        user_id: userId || null,
         name: creatorName,
         is_admin: true,
         is_active: true,
         color: 'from-blue-500 to-indigo-600',
+        user_id: userId || null,
       })
       .select()
       .single();
@@ -154,7 +134,6 @@ export async function createRoom(
     const member: Member = {
       id: memberData.id,
       roomId: memberData.room_id,
-      userId: memberData.user_id,
       name: memberData.name,
       avatarUrl: memberData.avatar_url,
       color: memberData.color,
@@ -162,12 +141,9 @@ export async function createRoom(
       isActive: memberData.is_active,
       cardNumber: memberData.card_number,
       bankName: memberData.bank_name,
+      userId: memberData.user_id || userId,
       joinedAt: memberData.joined_at,
     };
-
-    if (userId) {
-      addRoomToUserLocalCache(userId, room, member, 1);
-    }
 
     return { room, member };
   }
@@ -190,11 +166,11 @@ export async function createRoom(
   const newMember: Member = {
     id: memberId,
     roomId,
-    userId,
     name: creatorName,
     isAdmin: true,
     isActive: true,
     color: 'from-blue-500 to-indigo-600',
+    userId,
     joinedAt: new Date().toISOString(),
   };
 
@@ -214,11 +190,6 @@ export async function createRoom(
   bundle.activityLogs = [newLog];
 
   saveLocalFallbackState(bundle);
-
-  if (userId) {
-    addRoomToUserLocalCache(userId, newRoom, newMember, 1);
-  }
-
   return { room: newRoom, member: newMember };
 }
 
@@ -243,53 +214,15 @@ export async function joinRoom(
       throw new Error('کد دعوت وارد شده یافت نشد یا معتبر نیست.');
     }
 
-    // Check if user is already a member
-    if (userId) {
-      const { data: existingMembers } = await supabase
-        .from('members')
-        .select('*')
-        .eq('room_id', roomData.id)
-        .eq('user_id', userId)
-        .limit(1);
-
-      if (existingMembers && existingMembers.length > 0) {
-        const existing = existingMembers[0];
-        const room: Room = {
-          id: roomData.id,
-          name: roomData.name,
-          inviteCode: roomData.invite_code,
-          createdBy: roomData.created_by,
-          createdAt: roomData.created_at,
-          currency: roomData.currency,
-          description: roomData.description,
-        };
-        const member: Member = {
-          id: existing.id,
-          roomId: existing.room_id,
-          userId: existing.user_id,
-          name: existing.name,
-          avatarUrl: existing.avatar_url,
-          color: existing.color,
-          isAdmin: existing.is_admin,
-          isActive: existing.is_active,
-          cardNumber: existing.card_number,
-          bankName: existing.bank_name,
-          joinedAt: existing.joined_at,
-        };
-        addRoomToUserLocalCache(userId, room, member);
-        return { room, member };
-      }
-    }
-
     const { data: memberData, error: memberError } = await supabase
       .from('members')
       .insert({
         room_id: roomData.id,
-        user_id: userId || null,
         name: memberName,
         is_admin: false,
         is_active: true,
         color: 'from-emerald-500 to-teal-600',
+        user_id: userId || null,
       })
       .select()
       .single();
@@ -318,7 +251,6 @@ export async function joinRoom(
     const member: Member = {
       id: memberData.id,
       roomId: memberData.room_id,
-      userId: memberData.user_id,
       name: memberData.name,
       avatarUrl: memberData.avatar_url,
       color: memberData.color,
@@ -326,12 +258,9 @@ export async function joinRoom(
       isActive: memberData.is_active,
       cardNumber: memberData.card_number,
       bankName: memberData.bank_name,
+      userId: memberData.user_id || userId,
       joinedAt: memberData.joined_at,
     };
-
-    if (userId) {
-      addRoomToUserLocalCache(userId, room, member);
-    }
 
     return { room, member };
   }
@@ -342,27 +271,15 @@ export async function joinRoom(
     throw new Error(`کد دعوت یافت نشد. (کد نمونه موجود: ${bundle.room.inviteCode})`);
   }
 
-  // Check if already a member in mock bundle
-  const existingMember = bundle.members.find(
-    (m) => (userId && m.userId === userId) || m.name === memberName
-  );
-
-  if (existingMember) {
-    if (userId) {
-      addRoomToUserLocalCache(userId, bundle.room, existingMember, bundle.members.length);
-    }
-    return { room: bundle.room, member: existingMember };
-  }
-
   const memberId = `m-${Date.now()}`;
   const newMember: Member = {
     id: memberId,
     roomId: bundle.room.id,
-    userId,
     name: memberName,
     isAdmin: false,
     isActive: true,
     color: 'from-emerald-500 to-teal-600',
+    userId,
     joinedAt: new Date().toISOString(),
   };
 
@@ -378,10 +295,6 @@ export async function joinRoom(
   bundle.members.push(newMember);
   bundle.activityLogs.unshift(newLog);
   saveLocalFallbackState(bundle);
-
-  if (userId) {
-    addRoomToUserLocalCache(userId, bundle.room, newMember, bundle.members.length);
-  }
 
   return { room: bundle.room, member: newMember };
 }
@@ -432,7 +345,6 @@ export async function fetchRoomBundle(roomId: string): Promise<RoomBundle> {
     const members: Member[] = (mData || []).map((m: any) => ({
       id: m.id,
       roomId: m.room_id,
-      userId: m.user_id,
       name: m.name,
       avatarUrl: m.avatar_url,
       color: m.color,
@@ -440,6 +352,7 @@ export async function fetchRoomBundle(roomId: string): Promise<RoomBundle> {
       isActive: m.is_active,
       cardNumber: m.card_number,
       bankName: m.bank_name,
+      userId: m.user_id || undefined,
       joinedAt: m.joined_at,
     }));
 
@@ -1023,101 +936,105 @@ export async function deactivateMemberApi(
 }
 
 // ==============================================================================
-// 12. User Rooms Management
+// 12. Fetch User Rooms
 // ==============================================================================
-export async function fetchUserRooms(userId: string): Promise<UserRoomMembership[]> {
+export async function fetchUserRooms(
+  userId: string,
+  userDisplayName?: string
+): Promise<{ room: Room; member: Member }[]> {
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data: memberRows, error: mErr } = await supabase
+      // 1. Try querying by user_id
+      const { data, error } = await supabase
         .from('members')
-        .select('*, room:rooms(*)')
+        .select('*, rooms(*)')
         .eq('user_id', userId)
-        .eq('is_active', true);
+        .order('joined_at', { ascending: false });
 
-      if (mErr) {
-        console.warn('Supabase fetchUserRooms error, using local cache:', mErr);
-        return getFallbackUserRooms(userId);
+      if (!error && data && data.length > 0) {
+        return data
+          .filter((m: any) => m.rooms)
+          .map((m: any) => ({
+            room: {
+              id: m.rooms.id,
+              name: m.rooms.name,
+              inviteCode: m.rooms.invite_code,
+              createdBy: m.rooms.created_by,
+              createdAt: m.rooms.created_at,
+              currency: m.rooms.currency,
+              description: m.rooms.description,
+            },
+            member: {
+              id: m.id,
+              roomId: m.room_id,
+              name: m.name,
+              avatarUrl: m.avatar_url,
+              color: m.color,
+              isAdmin: m.is_admin,
+              isActive: m.is_active,
+              cardNumber: m.card_number,
+              bankName: m.bank_name,
+              userId: m.user_id || userId,
+              joinedAt: m.joined_at,
+            },
+          }));
       }
 
-      if (memberRows && memberRows.length > 0) {
-        const memberships: UserRoomMembership[] = [];
-        for (const row of memberRows) {
-          if (!row.room) continue;
+      // 2. Fallback by displayName if user_id was not yet attached to earlier records
+      if (userDisplayName) {
+        const { data: nameData } = await supabase
+          .from('members')
+          .select('*, rooms(*)')
+          .ilike('name', userDisplayName.trim())
+          .order('joined_at', { ascending: false });
 
-          // Active member count for this room
-          const { count } = await supabase
-            .from('members')
-            .select('*', { count: 'exact', head: true })
-            .eq('room_id', row.room_id)
-            .eq('is_active', true);
-
-          const room: Room = {
-            id: row.room.id,
-            name: row.room.name,
-            inviteCode: row.room.invite_code,
-            createdBy: row.room.created_by,
-            createdAt: row.room.created_at,
-            currency: row.room.currency,
-            description: row.room.description,
-          };
-
-          const member: Member = {
-            id: row.id,
-            roomId: row.room_id,
-            userId: row.user_id,
-            name: row.name,
-            avatarUrl: row.avatar_url,
-            color: row.color,
-            isAdmin: row.is_admin,
-            isActive: row.is_active,
-            cardNumber: row.card_number,
-            bankName: row.bank_name,
-            joinedAt: row.joined_at,
-          };
-
-          memberships.push({
-            room,
-            member,
-            membersCount: count ?? 1,
-          });
+        if (nameData && nameData.length > 0) {
+          return nameData
+            .filter((m: any) => m.rooms)
+            .map((m: any) => ({
+              room: {
+                id: m.rooms.id,
+                name: m.rooms.name,
+                inviteCode: m.rooms.invite_code,
+                createdBy: m.rooms.created_by,
+                createdAt: m.rooms.created_at,
+                currency: m.rooms.currency,
+                description: m.rooms.description,
+              },
+              member: {
+                id: m.id,
+                roomId: m.room_id,
+                name: m.name,
+                avatarUrl: m.avatar_url,
+                color: m.color,
+                isAdmin: m.is_admin,
+                isActive: m.is_active,
+                cardNumber: m.card_number,
+                bankName: m.bank_name,
+                userId: m.user_id || userId,
+                joinedAt: m.joined_at,
+              },
+            }));
         }
-
-        localStorage.setItem(
-          `${STORAGE_KEYS.USER_ROOMS_PREFIX}${userId}`,
-          JSON.stringify(memberships)
-        );
-        return memberships;
       }
     } catch (err) {
       console.warn('Error fetching user rooms from supabase:', err);
     }
+    return [];
   }
 
-  return getFallbackUserRooms(userId);
-}
-
-function getFallbackUserRooms(userId: string): UserRoomMembership[] {
-  const key = `${STORAGE_KEYS.USER_ROOMS_PREFIX}${userId}`;
-  const saved = localStorage.getItem(key);
-  if (saved) {
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  // Default fallback room
+  // Fallback Mock State
   const bundle = getLocalFallbackState();
-  const currentMember = bundle.members.find((m) => m.userId === userId) || bundle.members[0];
-  const defaultMembership: UserRoomMembership = {
-    room: bundle.room,
-    member: { ...currentMember, userId },
-    membersCount: bundle.members.filter((m) => m.isActive).length,
-  };
-  return [defaultMembership];
+  const matchedMember =
+    bundle.members.find(
+      (m) =>
+        (m.userId && m.userId === userId) ||
+        (userDisplayName && m.name.toLowerCase() === userDisplayName.toLowerCase())
+    ) || bundle.members[0];
+
+  if (matchedMember) {
+    return [{ room: bundle.room, member: matchedMember }];
+  }
+  return [{ room: bundle.room, member: bundle.members[0] }];
 }
 

@@ -1,19 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useId } from 'react';
 import {
-  Lock,
+  LogIn,
+  UserPlus,
   Mail,
+  Lock,
   User,
   Eye,
   EyeOff,
-  LogIn,
-  UserPlus,
   AlertCircle,
-  CheckCircle2,
   Loader2,
-  ShieldCheck,
   X,
+  Cloud,
+  Database,
 } from 'lucide-react';
-import { signInUser, signUpUser } from '../services/auth';
+import { signUp, signIn } from '../services/auth';
 import { isSupabaseConfigured } from '../lib/supabase';
 import type { AuthUser } from '../types';
 
@@ -30,290 +30,278 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const modalTitleId = useId();
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage(null);
-    setSuccessMessage(null);
+    setError(null);
 
-    const cleanEmail = email.trim();
+    const cleanEmail = email.trim().toLowerCase();
     const cleanPassword = password.trim();
-    const cleanName = displayName.trim();
+    const cleanDisplayName = displayName.trim();
 
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      setErrorMessage('لطفاً یک آدرس ایمیل معتبر وارد نمایید.');
+    if (!cleanEmail) {
+      setError('لطفاً ایمیل خود را وارد نمایید.');
       return;
     }
-
+    if (!cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setError('فرمت آدرس ایمیل نامعتبر است.');
+      return;
+    }
     if (!cleanPassword || cleanPassword.length < 6) {
-      setErrorMessage('رمز عبور باید حداقل ۶ کاراکتر باشد.');
+      setError('رمز عبور باید حداقل ۶ کاراکتر باشد.');
       return;
     }
 
-    if (mode === 'signup' && !cleanName) {
-      setErrorMessage('لطفاً نام و نام خانوادگی خود را وارد نمایید.');
+    if (mode === 'signup' && !cleanDisplayName) {
+      setError('لطفاً نام یا نام مستعار خود را وارد کنید.');
       return;
     }
 
-    setIsLoading(true);
-
+    setLoading(true);
     try {
-      if (mode === 'login') {
-        const user = await signInUser(cleanEmail, cleanPassword);
-        setSuccessMessage(`خوش آمدید، ${user.displayName}`);
-        setTimeout(() => {
-          onSuccess(user);
-        }, 500);
+      let user: AuthUser;
+      if (mode === 'signup') {
+        user = await signUp(cleanEmail, cleanPassword, cleanDisplayName);
       } else {
-        const user = await signUpUser(cleanEmail, cleanPassword, cleanName);
-        setSuccessMessage('حساب کاربری شما با موفقیت ساخته شد.');
-        setTimeout(() => {
-          onSuccess(user);
-        }, 600);
+        user = await signIn(cleanEmail, cleanPassword);
       }
+      onSuccess(user);
+      if (onClose) onClose();
     } catch (err: any) {
-      setErrorMessage(err?.message || 'خطایی در فرآیند احراز هویت رخ داد.');
+      setError(err?.message || 'خطا در برقراری ارتباط');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  };
-
-  const handleSwitchMode = (newMode: 'login' | 'signup') => {
-    setMode(newMode);
-    setErrorMessage(null);
-    setSuccessMessage(null);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div
-        className="bg-[#141d38] border border-slate-700/80 w-full max-w-md rounded-3xl shadow-2xl shadow-black/60 overflow-hidden flex flex-col transition-all"
-        dir="rtl"
-      >
-        {/* Header Bar */}
-        <div className="relative bg-gradient-to-b from-[#1b264a] to-[#141d38] p-6 pb-4 border-b border-slate-700/50">
-          {canClose && onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="absolute left-4 top-4 p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800/60 transition-colors"
-              aria-label="بستن"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={modalTitleId}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+    >
+      <div className="relative w-full max-w-md bg-[#141d38] border border-slate-700/80 rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+        {/* Top Header */}
+        <div className="p-6 pb-4 border-b border-slate-800 bg-[#172242]">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-emerald-500/20 shrink-0">
+                <span className="text-xl">د</span>
+              </div>
+              <div>
+                <h2 id={modalTitleId} className="text-base font-extrabold text-white">
+                  {mode === 'signin' ? 'ورود به حساب کاربری' : 'ایجاد حساب کاربری'}
+                </h2>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs text-slate-400">سامانه مدیریت دنگ و مخارج دنگاتو</span>
+                  {isSupabaseConfigured ? (
+                    <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                      <Cloud className="w-2.5 h-2.5 text-emerald-400" />
+                      ابری
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                      <Database className="w-2.5 h-2.5 text-amber-400" />
+                      محلی
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
 
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-emerald-500/20 shrink-0">
-              <ShieldCheck className="w-6 h-6 text-slate-950" />
-            </div>
-            <div>
-              <h2 className="text-xl font-black text-white">
-                {mode === 'login' ? 'ورود به دنگاتو' : 'ثبت‌نام کاربر جدید'}
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                {mode === 'login'
-                  ? 'جهت دسترسی به اتاق‌ها و مدیریت دنگ‌ها وارد شوید'
-                  : 'برای ثبت سهم‌ها و تسویه حساب یک حساب بسازید'}
-              </p>
-            </div>
+            {canClose && onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors"
+                aria-label="بستن"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
           </div>
 
-          {/* Mode Switch Tabs */}
+          {/* Tab Switcher: Sign In vs Sign Up */}
           <div className="flex items-center p-1 bg-[#0b132b] rounded-2xl border border-slate-700/60 mt-4">
             <button
               type="button"
-              onClick={() => handleSwitchMode('login')}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                mode === 'login'
-                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+              onClick={() => {
+                setMode('signin');
+                setError(null);
+              }}
+              className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                mode === 'signin'
+                  ? 'bg-emerald-500 text-slate-950 shadow-md'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <LogIn className="w-3.5 h-3.5" />
+              <LogIn className="w-4 h-4" />
               <span>ورود</span>
             </button>
+
             <button
               type="button"
-              onClick={() => handleSwitchMode('signup')}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+              onClick={() => {
+                setMode('signup');
+                setError(null);
+              }}
+              className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                 mode === 'signup'
-                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                  ? 'bg-emerald-500 text-slate-950 shadow-md'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <UserPlus className="w-3.5 h-3.5" />
+              <UserPlus className="w-4 h-4" />
               <span>ثبت‌نام</span>
             </button>
           </div>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Error Banner */}
-          {errorMessage && (
-            <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs animate-in fade-in">
+        <div className="p-6 space-y-4">
+          {error && (
+            <div className="p-3 text-xs rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-              <span className="leading-relaxed">{errorMessage}</span>
+              <span>{error}</span>
             </div>
           )}
 
-          {/* Success Banner */}
-          {successMessage && (
-            <div className="flex items-center gap-2 p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs animate-in fade-in">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>{successMessage}</span>
-            </div>
-          )}
-
-          {/* Display Name Input (Only on Sign Up) */}
-          {mode === 'signup' && (
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-300">
-                نام و نام خانوادگی <span className="text-emerald-400">*</span>
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3.5 pointer-events-none text-slate-400">
-                  <User className="w-4 h-4" />
-                </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Display Name (Only in Sign Up) */}
+            {mode === 'signup' && (
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-slate-400" />
+                  نام و نام خانوادگی / نام مستعار <span className="text-rose-400">*</span>
+                </label>
                 <input
                   type="text"
-                  required
+                  required={mode === 'signup'}
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   placeholder="مثال: علی رضایی"
-                  className="w-full bg-[#0b132b] border border-slate-700 rounded-xl pr-10 pl-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+                  className="w-full px-4 py-2.5 bg-[#0b132b] border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-all text-sm"
                 />
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Email Input */}
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-300">
-              آدرس ایمیل <span className="text-emerald-400">*</span>
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 right-0 flex items-center pr-3.5 pointer-events-none text-slate-400">
-                <Mail className="w-4 h-4" />
-              </div>
+            {/* Email Address */}
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center gap-1.5">
+                <Mail className="w-3.5 h-3.5 text-slate-400" />
+                آدرس ایمیل <span className="text-rose-400">*</span>
+              </label>
               <input
                 type="email"
                 required
-                dir="ltr"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@example.com"
-                className="w-full bg-[#0b132b] border border-slate-700 rounded-xl pr-10 pl-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors text-left"
-              />
-            </div>
-          </div>
-
-          {/* Password Input */}
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-300">
-              رمز عبور <span className="text-emerald-400">*</span>
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 right-0 flex items-center pr-3.5 pointer-events-none text-slate-400">
-                <Lock className="w-4 h-4" />
-              </div>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                required
+                placeholder="you@example.com"
                 dir="ltr"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="حداقل ۶ کاراکتر"
-                className="w-full bg-[#0b132b] border border-slate-700 rounded-xl pr-10 pl-10 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors text-left"
+                className="w-full px-4 py-2.5 bg-[#0b132b] border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-all text-sm font-mono"
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 hover:text-slate-200"
-                tabIndex={-1}
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
             </div>
-          </div>
 
-          {/* Submit Action CTA */}
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full mt-2 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] disabled:opacity-50 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>در حال ارتباط...</span>
-              </>
-            ) : mode === 'login' ? (
-              <>
-                <LogIn className="w-4 h-4" />
-                <span>ورود به حساب</span>
-              </>
-            ) : (
-              <>
-                <UserPlus className="w-4 h-4" />
-                <span>ایجاد حساب کاربری</span>
-              </>
-            )}
-          </button>
+            {/* Password */}
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                رمز عبور <span className="text-rose-400">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="حداقل ۶ کاراکتر"
+                  dir="ltr"
+                  className="w-full px-4 py-2.5 pl-10 bg-[#0b132b] border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-all text-sm font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors"
+                  aria-label={showPassword ? 'مخفی کردن رمز' : 'نمایش رمز'}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <span className="text-[11px] text-slate-500 block mt-1">
+                {mode === 'signup'
+                  ? 'رمز عبور امن برای ورود به اتاق‌های شما در تمام دستگاه‌ها استفاده می‌شود.'
+                  : 'رمز عبور حساب دنگاتو خود را وارد کنید.'}
+              </span>
+            </div>
 
-          {/* Mode Switch Text Button */}
-          <div className="text-center pt-2">
-            {mode === 'login' ? (
-              <p className="text-xs text-slate-400">
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all mt-3"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>در حال پردازش...</span>
+                </>
+              ) : mode === 'signin' ? (
+                <>
+                  <LogIn className="w-4 h-4" />
+                  <span>ورود به حساب</span>
+                </>
+              ) : (
+                <>
+                  <UserPlus className="w-4 h-4" />
+                  <span>ایجاد حساب کاربری</span>
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Quick toggle at bottom */}
+          <div className="pt-2 text-center text-xs text-slate-400">
+            {mode === 'signin' ? (
+              <span>
                 حساب کاربری ندارید؟{' '}
                 <button
                   type="button"
-                  onClick={() => handleSwitchMode('signup')}
-                  className="font-bold text-emerald-400 hover:underline"
+                  onClick={() => {
+                    setMode('signup');
+                    setError(null);
+                  }}
+                  className="text-emerald-400 hover:text-emerald-300 font-bold transition-colors"
                 >
                   ثبت‌نام کنید
                 </button>
-              </p>
+              </span>
             ) : (
-              <p className="text-xs text-slate-400">
+              <span>
                 قبلاً ثبت‌نام کرده‌اید؟{' '}
                 <button
                   type="button"
-                  onClick={() => handleSwitchMode('login')}
-                  className="font-bold text-emerald-400 hover:underline"
+                  onClick={() => {
+                    setMode('signin');
+                    setError(null);
+                  }}
+                  className="text-emerald-400 hover:text-emerald-300 font-bold transition-colors"
                 >
                   وارد شوید
                 </button>
-              </p>
+              </span>
             )}
           </div>
-        </form>
-
-        {/* Footer info pill */}
-        <div className="bg-[#0b132b] px-6 py-3 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-          <span>وضعیت سرویس:</span>
-          {isSupabaseConfigured ? (
-            <span className="text-emerald-400 font-semibold flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              Supabase Auth فعال
-            </span>
-          ) : (
-            <span className="text-amber-400 font-semibold flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-              نشست آزمایشی (محلی)
-            </span>
-          )}
         </div>
       </div>
     </div>

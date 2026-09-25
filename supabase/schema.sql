@@ -25,7 +25,6 @@ CREATE TABLE IF NOT EXISTS rooms (
 CREATE TABLE IF NOT EXISTS members (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     name TEXT NOT NULL,
     avatar_url TEXT,
     color TEXT,
@@ -33,17 +32,18 @@ CREATE TABLE IF NOT EXISTS members (
     is_active BOOLEAN NOT NULL DEFAULT true, -- Soft-delete invariant
     card_number TEXT,
     bank_name TEXT,
+    user_id UUID, -- Link to auth.users (Supabase Auth)
     joined_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Idempotent column check for existing members table
+-- Idempotent check for members.user_id column
 DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'members' AND column_name = 'user_id'
     ) THEN
-        ALTER TABLE members ADD COLUMN user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+        ALTER TABLE members ADD COLUMN user_id UUID;
     END IF;
 END $$;
 

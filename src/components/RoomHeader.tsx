@@ -7,20 +7,19 @@ import {
   Database,
   Shield,
   Download,
-  DoorOpen,
+  Home,
 } from 'lucide-react';
 import type { Room, Member, AuthUser } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
 
 interface RoomHeaderProps {
   room: Room;
-  members: Member[];
   currentUser: Member;
   authUser: AuthUser | null;
   onOpenMyRooms: () => void;
+  onLogout: () => void;
   onOpenAdminSettings?: () => void;
   onExportCSV?: () => void;
-  onSignOut: () => void;
 }
 
 export const RoomHeader: React.FC<RoomHeaderProps> = ({
@@ -28,9 +27,9 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
   currentUser,
   authUser,
   onOpenMyRooms,
+  onLogout,
   onOpenAdminSettings,
   onExportCSV,
-  onSignOut,
 }) => {
   const [copiedCode, setCopiedCode] = useState(false);
   const isAdmin = Boolean(currentUser?.isAdmin);
@@ -41,14 +40,14 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  const displayName = authUser?.displayName || currentUser?.name || 'کاربر دنگاتو';
-  const initialLetter = displayName.slice(0, 1) || '؟';
+  const displayName = currentUser?.name || authUser?.displayName || 'هم‌اتاقی';
+  const initial = displayName.slice(0, 1) || 'د';
 
   return (
     <header className="bg-[#141d38]/90 backdrop-blur-md border-b border-slate-700/60 sticky top-0 z-40">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3.5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          {/* Left: Logo & Room Title */}
+          {/* Logo & Room Title */}
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-emerald-500/20 shrink-0">
               <span className="text-xl">د</span>
@@ -92,7 +91,7 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
             </div>
           </div>
 
-          {/* Right: Actions, Authenticated User Pill & Logout */}
+          {/* Right: Actions, My Rooms, User Profile & Logout */}
           <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
             {/* CSV Financial Export CTA */}
             {onExportCSV && (
@@ -116,50 +115,52 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
                 title="پنل مدیریت اتاق"
               >
                 <Shield className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden md:inline">مدیریت</span>
+                <span className="hidden md:inline">مدیریت اتاق</span>
               </button>
             )}
 
-            {/* "My Rooms" Switcher Button */}
+            {/* My Rooms Switcher CTA */}
             <button
               type="button"
               onClick={onOpenMyRooms}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/80 text-xs font-bold transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition-colors shadow-sm"
               title="مشاهده و تغییر اتاق‌ها"
             >
-              <DoorOpen className="w-3.5 h-3.5 text-emerald-400" />
+              <Home className="w-3.5 h-3.5 text-emerald-400" />
               <span>اتاق‌های من</span>
             </button>
 
-            {/* Authenticated User Identity Pill (Strict - No Dropdown Switcher) */}
-            <div className="flex items-center gap-2 bg-[#0b132b] px-2.5 py-1 rounded-xl border border-slate-700/80">
+            {/* User Profile Badge (Strict Single Identity) */}
+            <div className="flex items-center gap-2 bg-[#0b132b] px-2.5 py-1.5 rounded-xl border border-slate-700/70">
               <div
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black text-white bg-gradient-to-tr ${
+                className={`w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-bold text-white bg-gradient-to-br ${
                   currentUser?.color || 'from-emerald-500 to-teal-600'
                 }`}
               >
-                {initialLetter}
+                {initial}
               </div>
-              <div className="flex items-center gap-1">
-                <span className="text-xs font-bold text-white max-w-[90px] sm:max-w-[120px] truncate">
+
+              <div className="flex flex-col text-right">
+                <span className="text-xs font-bold text-white max-w-[90px] sm:max-w-[120px] truncate leading-tight">
                   {displayName}
                 </span>
-                {isAdmin && (
-                  <span className="text-[10px]" title="مدیر اتاق">
-                    👑
-                  </span>
+                {isAdmin ? (
+                  <span className="text-[9px] text-amber-400 leading-tight">مدیر</span>
+                ) : (
+                  <span className="text-[9px] text-slate-400 leading-tight">هم‌اتاقی</span>
                 )}
               </div>
             </div>
 
-            {/* Sign Out CTA */}
+            {/* Logout CTA */}
             <button
               type="button"
-              onClick={onSignOut}
-              className="flex items-center gap-1 p-2 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-slate-700/80 transition-colors"
+              onClick={onLogout}
+              className="flex items-center gap-1 px-2.5 py-2 text-xs rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-colors"
               title="خروج از حساب کاربری"
             >
-              <LogOut className="w-3.5 h-3.5" />
+              <LogOut className="w-3.5 h-3.5 text-rose-400" />
+              <span className="hidden lg:inline">خروج</span>
             </button>
           </div>
         </div>

@@ -18,8 +18,9 @@ interface JoinRoomModalProps {
   onClose?: () => void;
   canClose?: boolean;
   initialInviteCode?: string;
-  userId?: string;
   defaultDisplayName?: string;
+  userId?: string;
+  initialTab?: 'join' | 'create';
   onSuccess: (room: Room, member: Member) => void;
 }
 
@@ -28,12 +29,13 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
   onClose,
   canClose = false,
   initialInviteCode = '',
-  userId,
   defaultDisplayName = '',
+  userId,
+  initialTab = 'join',
   onSuccess,
 }) => {
   const modalTitleId = useId();
-  const [tab, setTab] = useState<'join' | 'create'>('join');
+  const [tab, setTab] = useState<'join' | 'create'>(initialTab);
   const [displayName, setDisplayName] = useState(defaultDisplayName);
   const [inviteCode, setInviteCode] = useState(initialInviteCode);
   const [roomName, setRoomName] = useState('');
@@ -41,17 +43,23 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (defaultDisplayName && !displayName) {
-      setDisplayName(defaultDisplayName);
-    }
-  }, [defaultDisplayName]);
-
-  useEffect(() => {
     if (initialInviteCode) {
       setInviteCode(initialInviteCode);
       setTab('join');
     }
   }, [initialInviteCode]);
+
+  useEffect(() => {
+    if (initialTab) {
+      setTab(initialTab);
+    }
+  }, [initialTab]);
+
+  useEffect(() => {
+    if (defaultDisplayName && !displayName) {
+      setDisplayName(defaultDisplayName);
+    }
+  }, [defaultDisplayName]);
 
   if (!isOpen) return null;
 

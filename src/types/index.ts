@@ -21,19 +21,11 @@ export interface AuthUser {
   id: string;
   email: string;
   displayName: string;
-  avatarUrl?: string;
-}
-
-export interface UserRoomMembership {
-  room: Room;
-  member: Member;
-  membersCount: number;
 }
 
 export interface Member {
   id: string;
   roomId: string;
-  userId?: string;
   name: string;
   avatarUrl?: string;
   color?: string;
@@ -42,6 +34,7 @@ export interface Member {
   joinedAt: string;
   cardNumber?: string;
   bankName?: string;
+  userId?: string; // Foreign key / link to auth user ID
 }
 
 export interface Split {
