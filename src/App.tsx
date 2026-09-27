@@ -146,22 +146,6 @@ export function App() {
     []
   );
 
-  // Check user rooms on auth state change
-  useEffect(() => {
-    if (authUser) {
-      refreshUserRooms(authUser).then((rooms) => {
-        if (rooms.length === 0) {
-          setIsMyRoomsOpen(true);
-        } else if (rooms.length > 1) {
-          const savedRoomId = localStorage.getItem(STORAGE_KEYS.ROOM_ID);
-          if (!savedRoomId || !rooms.some((r) => r.room.id === savedRoomId)) {
-            setIsMyRoomsOpen(true);
-          }
-        }
-      });
-    }
-  }, [authUser, refreshUserRooms]);
-
   // Load Room Data
   const loadRoom = useCallback(async (roomIdToLoad: string) => {
     setIsLoadingBundle(true);
@@ -173,8 +157,11 @@ export function App() {
       setSettlements(bundle.settlements);
       setActivityLogs(bundle.activityLogs);
 
-      const exists = bundle.members.some((m) => m.id === currentUserId);
-      if (!exists && bundle.members.length > 0) {
+      const savedMemberId = localStorage.getItem(STORAGE_KEYS.MEMBER_ID);
+      const memberExists = bundle.members.some((m) => m.id === currentUserId || m.id === savedMemberId);
+      if (savedMemberId && bundle.members.some((m) => m.id === savedMemberId)) {
+        handleSetCurrentUser(savedMemberId);
+      } else if (!memberExists && bundle.members.length > 0) {
         handleSetCurrentUser(bundle.members[0].id);
       }
     } catch (err: any) {
@@ -183,6 +170,38 @@ export function App() {
       setIsLoadingBundle(false);
     }
   }, [currentUserId, showToast]);
+
+  // Check user rooms on auth state change
+  useEffect(() => {
+    if (authUser) {
+      refreshUserRooms(authUser).then((rooms) => {
+        const savedRoomId = localStorage.getItem(STORAGE_KEYS.ROOM_ID);
+
+        // If localStorage has an active room ID, prioritize displaying that room directly
+        if (savedRoomId) {
+          const matched = rooms.find((r) => r.room.id === savedRoomId);
+          if (matched) {
+            handleSetCurrentUser(matched.member.id);
+          }
+          // Do NOT open MyRoomsModal dialog
+          return;
+        }
+
+        // Only fall back to MyRoomsModal if there is no active room in localStorage
+        if (rooms.length === 0) {
+          setIsMyRoomsOpen(true);
+        } else if (rooms.length === 1) {
+          const only = rooms[0];
+          localStorage.setItem(STORAGE_KEYS.ROOM_ID, only.room.id);
+          localStorage.setItem(STORAGE_KEYS.MEMBER_ID, only.member.id);
+          handleSetCurrentUser(only.member.id);
+          loadRoom(only.room.id);
+        } else if (rooms.length > 1) {
+          setIsMyRoomsOpen(true);
+        }
+      });
+    }
+  }, [authUser, refreshUserRooms, loadRoom]);
 
   // URL ?join=CODE detection & Initial Room Loading
   useEffect(() => {
@@ -216,13 +235,14 @@ export function App() {
 
   // Room Join / Creation Handler
   const handleRoomSuccess = (newRoom: Room, newMember: Member) => {
+    localStorage.setItem(STORAGE_KEYS.ROOM_ID, newRoom.id);
+    localStorage.setItem(STORAGE_KEYS.MEMBER_ID, newMember.id);
+    handleSetCurrentUser(newMember.id);
     setRoom(newRoom);
     setMembers([newMember]);
     setExpenses([]);
     setSettlements([]);
     setActivityLogs([]);
-    handleSetCurrentUser(newMember.id);
-    localStorage.setItem(STORAGE_KEYS.ROOM_ID, newRoom.id);
     setIsJoinRoomOpen(false);
     setIsMyRoomsOpen(false);
     showToast(`شما با موفقیت وارد اتاق «${newRoom.name}» شدید.`);
@@ -492,7 +512,13 @@ export function App() {
     try {
       await updateRoomNameApi(room.id, newName, currentUser.name, currentUserId);
       setRoom((prev) => ({ ...prev, name: newName }));
+      setUserRooms((prev) =>
+        prev.map((item) =>
+          item.room.id === room.id ? { ...item, room: { ...item.room, name: newName } } : item
+        )
+      );
       showToast(`نام اتاق با موفقیت به «${newName}» تغییر یافت.`);
+      loadRoom(room.id);
     } catch (err: any) {
       showToast(err?.message || 'خطا در تغییر نام اتاق', 'error');
     }
@@ -875,8 +901,13 @@ export function App() {
         userRooms={userRooms}
         currentRoomId={room.id}
         onSelectRoom={(roomId) => {
+          const matched = userRooms.find((ur) => ur.room.id === roomId);
+          if (matched) {
+            handleSetCurrentUser(matched.member.id);
+          }
           localStorage.setItem(STORAGE_KEYS.ROOM_ID, roomId);
           loadRoom(roomId);
+          setIsMyRoomsOpen(false);
           showToast('اتاق تغییر یافت.');
         }}
         onOpenCreateRoom={() => {
@@ -900,7 +931,21 @@ export function App() {
           setIsAuthModalOpen(false);
           showToast(`خوش آمدید، ${user.displayName}`);
           refreshUserRooms(user).then((rooms) => {
-            if (rooms.length === 0 || rooms.length > 1) {
+            const savedRoomId = localStorage.getItem(STORAGE_KEYS.ROOM_ID);
+            if (savedRoomId) {
+              const matched = rooms.find((r) => r.room.id === savedRoomId);
+              if (matched) {
+                handleSetCurrentUser(matched.member.id);
+              }
+              return;
+            }
+            if (rooms.length === 1) {
+              const only = rooms[0];
+              localStorage.setItem(STORAGE_KEYS.ROOM_ID, only.room.id);
+              localStorage.setItem(STORAGE_KEYS.MEMBER_ID, only.member.id);
+              handleSetCurrentUser(only.member.id);
+              loadRoom(only.room.id);
+            } else if (rooms.length === 0 || rooms.length > 1) {
               setIsMyRoomsOpen(true);
             }
           });

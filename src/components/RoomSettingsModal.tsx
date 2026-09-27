@@ -1,4 +1,4 @@
-import React, { useState, useId } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import {
   X,
   Shield,
@@ -45,6 +45,14 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   const [roomNameInput, setRoomNameInput] = useState(room.name);
   const [copiedLink, setCopiedLink] = useState(false);
   const [memberToDeactivate, setMemberToDeactivate] = useState<Member | null>(null);
+
+  // Sync local input state with room.name when the modal opens or when room changes
+  useEffect(() => {
+    if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRoomNameInput(room.name);
+    }
+  }, [isOpen, room.name]);
 
   if (!isOpen) return null;
 

@@ -69,7 +69,8 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
       setError('لطفاً نام یا نام مستعار خود را وارد کنید');
       return;
     }
-    if (!inviteCode.trim()) {
+    const cleanInviteCode = inviteCode.trim().toUpperCase();
+    if (!cleanInviteCode) {
       setError('لطفاً کد دعوت ۶ رقمی اتاق را وارد کنید');
       return;
     }
@@ -78,7 +79,7 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
     setError(null);
 
     try {
-      const { room, member } = await joinRoom(inviteCode, displayName.trim(), userId);
+      const { room, member } = await joinRoom(cleanInviteCode, displayName.trim(), userId);
       onSuccess(room, member);
     } catch (err: any) {
       setError(err?.message || 'خطا در ورود به اتاق');
@@ -214,8 +215,8 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
                   type="text"
                   required
                   value={inviteCode}
-                  onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                  placeholder="مثال: CHAMRAN-204 یا DNG-784"
+                  onChange={(e) => setInviteCode(e.target.value.trim().toUpperCase())}
+                  placeholder="مثال: 7K9MX2"
                   className="w-full px-4 py-2.5 bg-[#0b132b] border border-slate-700 rounded-xl text-white placeholder-slate-500 uppercase tracking-widest font-mono focus:outline-none focus:border-emerald-500 transition-all text-sm"
                 />
                 <span className="text-[11px] text-slate-400 block mt-1">

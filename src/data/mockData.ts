@@ -3,7 +3,7 @@ import type { Room, Member, Expense, Settlement, ActivityLog } from '../types';
 export const initialRoom: Room = {
   id: 'room-1',
   name: 'خوابگاه چمران - اتاق ۲۰۴',
-  inviteCode: 'CHAMRAN-204',
+  inviteCode: '7K9MX2',
   createdBy: 'm1',
   createdAt: '2026-08-15T10:00:00Z',
   currency: 'تومان',

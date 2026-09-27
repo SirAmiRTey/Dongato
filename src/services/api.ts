@@ -22,15 +22,15 @@ export const STORAGE_KEYS = {
 } as const;
 
 /**
- * Generates a unique 6-character alphanumeric invite code (e.g. DNG-784)
+ * Generates a unique 6-character alphanumeric invite code (e.g. 7K9MX2)
  */
 export function generateInviteCode(): string {
-  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   let rand = '';
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 6; i++) {
     rand += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return `DNG-${rand}`;
+  return rand;
 }
 
 export interface RoomBundle {
@@ -76,6 +76,18 @@ export async function createRoom(
 ): Promise<{ room: Room; member: Member }> {
   const inviteCode = generateInviteCode();
 
+  let effectiveUserId = userId;
+  if (!effectiveUserId) {
+    try {
+      const savedAuth = localStorage.getItem('dongato_auth_user');
+      if (savedAuth) {
+        effectiveUserId = JSON.parse(savedAuth).id;
+      }
+    } catch {
+      // ignore parse error
+    }
+  }
+
   if (isSupabaseConfigured && supabase) {
     // A. Insert Room
     const { data: roomData, error: roomError } = await supabase
@@ -101,7 +113,7 @@ export async function createRoom(
         is_admin: true,
         is_active: true,
         color: 'from-blue-500 to-indigo-600',
-        user_id: userId || null,
+        user_id: effectiveUserId || null,
       })
       .select()
       .single();
@@ -113,7 +125,11 @@ export async function createRoom(
     // C. Update rooms.created_by
     await supabase.from('rooms').update({ created_by: memberData.id }).eq('id', roomData.id);
 
-    // D. Log activity
+    // D. Persist active room ID & member ID to localStorage
+    localStorage.setItem(STORAGE_KEYS.ROOM_ID, roomData.id);
+    localStorage.setItem(STORAGE_KEYS.MEMBER_ID, memberData.id);
+
+    // E. Log activity
     await supabase.from('activity_logs').insert({
       room_id: roomData.id,
       actor_id: memberData.id,
@@ -141,7 +157,7 @@ export async function createRoom(
       isActive: memberData.is_active,
       cardNumber: memberData.card_number,
       bankName: memberData.bank_name,
-      userId: memberData.user_id || userId,
+      userId: memberData.user_id || effectiveUserId,
       joinedAt: memberData.joined_at,
     };
 
@@ -170,7 +186,7 @@ export async function createRoom(
     isAdmin: true,
     isActive: true,
     color: 'from-blue-500 to-indigo-600',
-    userId,
+    userId: effectiveUserId,
     joinedAt: new Date().toISOString(),
   };
 
@@ -190,6 +206,9 @@ export async function createRoom(
   bundle.activityLogs = [newLog];
 
   saveLocalFallbackState(bundle);
+  localStorage.setItem(STORAGE_KEYS.ROOM_ID, roomId);
+  localStorage.setItem(STORAGE_KEYS.MEMBER_ID, memberId);
+
   return { room: newRoom, member: newMember };
 }
 
@@ -203,17 +222,31 @@ export async function joinRoom(
 ): Promise<{ room: Room; member: Member }> {
   const normalizedCode = inviteCode.trim().toUpperCase();
 
+  let effectiveUserId = userId;
+  if (!effectiveUserId) {
+    try {
+      const savedAuth = localStorage.getItem('dongato_auth_user');
+      if (savedAuth) {
+        effectiveUserId = JSON.parse(savedAuth).id;
+      }
+    } catch {
+      // ignore parse error
+    }
+  }
+
   if (isSupabaseConfigured && supabase) {
+    // Query rooms case-insensitively using .ilike('invite_code', inviteCode.trim())
     const { data: roomData, error: roomError } = await supabase
       .from('rooms')
       .select('*')
-      .eq('invite_code', normalizedCode)
-      .single();
+      .ilike('invite_code', inviteCode.trim())
+      .maybeSingle();
 
     if (roomError || !roomData) {
       throw new Error('کد دعوت وارد شده یافت نشد یا معتبر نیست.');
     }
 
+    // Insert new member
     const { data: memberData, error: memberError } = await supabase
       .from('members')
       .insert({
@@ -222,7 +255,7 @@ export async function joinRoom(
         is_admin: false,
         is_active: true,
         color: 'from-emerald-500 to-teal-600',
-        user_id: userId || null,
+        user_id: effectiveUserId || null,
       })
       .select()
       .single();
@@ -230,6 +263,10 @@ export async function joinRoom(
     if (memberError || !memberData) {
       throw new Error(`خطا در ورود به اتاق: ${memberError?.message}`);
     }
+
+    // Persist active room ID and member ID to localStorage
+    localStorage.setItem(STORAGE_KEYS.ROOM_ID, roomData.id);
+    localStorage.setItem(STORAGE_KEYS.MEMBER_ID, memberData.id);
 
     await supabase.from('activity_logs').insert({
       room_id: roomData.id,
@@ -258,7 +295,7 @@ export async function joinRoom(
       isActive: memberData.is_active,
       cardNumber: memberData.card_number,
       bankName: memberData.bank_name,
-      userId: memberData.user_id || userId,
+      userId: memberData.user_id || effectiveUserId,
       joinedAt: memberData.joined_at,
     };
 
@@ -267,7 +304,7 @@ export async function joinRoom(
 
   // Fallback Mock State
   const bundle = getLocalFallbackState();
-  if (bundle.room.inviteCode !== normalizedCode) {
+  if (bundle.room.inviteCode.trim().toUpperCase() !== normalizedCode) {
     throw new Error(`کد دعوت یافت نشد. (کد نمونه موجود: ${bundle.room.inviteCode})`);
   }
 
@@ -279,7 +316,7 @@ export async function joinRoom(
     isAdmin: false,
     isActive: true,
     color: 'from-emerald-500 to-teal-600',
-    userId,
+    userId: effectiveUserId,
     joinedAt: new Date().toISOString(),
   };
 
@@ -295,6 +332,9 @@ export async function joinRoom(
   bundle.members.push(newMember);
   bundle.activityLogs.unshift(newLog);
   saveLocalFallbackState(bundle);
+
+  localStorage.setItem(STORAGE_KEYS.ROOM_ID, bundle.room.id);
+  localStorage.setItem(STORAGE_KEYS.MEMBER_ID, memberId);
 
   return { room: bundle.room, member: newMember };
 }
@@ -944,79 +984,92 @@ export async function fetchUserRooms(
 ): Promise<{ room: Room; member: Member }[]> {
   if (isSupabaseConfigured && supabase) {
     try {
-      // 1. Try querying by user_id
-      const { data, error } = await supabase
+      // Step 1: Query members table for active memberships without ambiguous embedded joins
+      const { data: directMembers, error: membersError } = await supabase
         .from('members')
-        .select('*, rooms(*)')
+        .select('*')
         .eq('user_id', userId)
+        .eq('is_active', true)
         .order('joined_at', { ascending: false });
 
-      if (!error && data && data.length > 0) {
-        return data
-          .filter((m: any) => m.rooms)
-          .map((m: any) => ({
-            room: {
-              id: m.rooms.id,
-              name: m.rooms.name,
-              inviteCode: m.rooms.invite_code,
-              createdBy: m.rooms.created_by,
-              createdAt: m.rooms.created_at,
-              currency: m.rooms.currency,
-              description: m.rooms.description,
-            },
-            member: {
-              id: m.id,
-              roomId: m.room_id,
-              name: m.name,
-              avatarUrl: m.avatar_url,
-              color: m.color,
-              isAdmin: m.is_admin,
-              isActive: m.is_active,
-              cardNumber: m.card_number,
-              bankName: m.bank_name,
-              userId: m.user_id || userId,
-              joinedAt: m.joined_at,
-            },
-          }));
+      if (membersError) {
+        console.warn('Error querying members by user_id:', membersError.message);
       }
 
-      // 2. Fallback by displayName if user_id was not yet attached to earlier records
-      if (userDisplayName) {
-        const { data: nameData } = await supabase
+      let membersData = directMembers;
+
+      // Fallback: If no records match userId, try querying by displayName if provided
+      if ((!membersData || membersData.length === 0) && userDisplayName) {
+        const { data: nameMembersData } = await supabase
           .from('members')
-          .select('*, rooms(*)')
+          .select('*')
           .ilike('name', userDisplayName.trim())
+          .eq('is_active', true)
           .order('joined_at', { ascending: false });
 
-        if (nameData && nameData.length > 0) {
-          return nameData
-            .filter((m: any) => m.rooms)
-            .map((m: any) => ({
-              room: {
-                id: m.rooms.id,
-                name: m.rooms.name,
-                inviteCode: m.rooms.invite_code,
-                createdBy: m.rooms.created_by,
-                createdAt: m.rooms.created_at,
-                currency: m.rooms.currency,
-                description: m.rooms.description,
-              },
-              member: {
-                id: m.id,
-                roomId: m.room_id,
-                name: m.name,
-                avatarUrl: m.avatar_url,
-                color: m.color,
-                isAdmin: m.is_admin,
-                isActive: m.is_active,
-                cardNumber: m.card_number,
-                bankName: m.bank_name,
-                userId: m.user_id || userId,
-                joinedAt: m.joined_at,
-              },
-            }));
+        if (nameMembersData && nameMembersData.length > 0) {
+          membersData = nameMembersData;
+          // Backfill user_id on unlinked member records
+          const unlinkedIds = nameMembersData.filter((m: any) => !m.user_id).map((m: any) => m.id);
+          if (unlinkedIds.length > 0) {
+            await supabase.from('members').update({ user_id: userId }).in('id', unlinkedIds);
+          }
         }
       }
+
+      if (!membersData || membersData.length === 0) {
+        return [];
+      }
+
+      // Step 2: Query rooms table for those room IDs
+      const roomIds = Array.from(new Set(membersData.map((m: any) => m.room_id).filter(Boolean)));
+      if (roomIds.length === 0) {
+        return [];
+      }
+
+      const { data: roomsData, error: roomsError } = await supabase
+        .from('rooms')
+        .select('*')
+        .in('id', roomIds);
+
+      if (roomsError || !roomsData || roomsData.length === 0) {
+        return [];
+      }
+
+      const roomsMap = new Map<string, any>(roomsData.map((r: any) => [r.id, r]));
+
+      const result: { room: Room; member: Member }[] = [];
+      for (const m of membersData) {
+        const r = roomsMap.get(m.room_id);
+        if (!r) continue;
+
+        result.push({
+          room: {
+            id: r.id,
+            name: r.name,
+            inviteCode: r.invite_code,
+            createdBy: r.created_by,
+            createdAt: r.created_at,
+            currency: r.currency,
+            description: r.description,
+          },
+          member: {
+            id: m.id,
+            roomId: m.room_id,
+            name: m.name,
+            avatarUrl: m.avatar_url,
+            color: m.color,
+            isAdmin: Boolean(m.is_admin),
+            isActive: Boolean(m.is_active),
+            cardNumber: m.card_number,
+            bankName: m.bank_name,
+            userId: m.user_id || userId,
+            joinedAt: m.joined_at,
+          },
+        });
+      }
+
+      return result;
     } catch (err) {
       console.warn('Error fetching user rooms from supabase:', err);
     }

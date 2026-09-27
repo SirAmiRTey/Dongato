@@ -79,7 +79,8 @@ export type ActivityType =
   | 'settlement_confirmed'
   | 'settlement_rejected'
   | 'member_joined'
-  | 'member_left';
+  | 'member_left'
+  | 'room_updated';
 
 export interface ActivityLog {
   id: string;
