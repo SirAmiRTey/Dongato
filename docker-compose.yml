@@ -15,6 +15,7 @@ services:
       - ./scripts/init-roles.sql:/docker-entrypoint-initdb.d/00-roles.sql:ro
       - ./supabase/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./scripts/auth-rpc.sql:/docker-entrypoint-initdb.d/02-auth-rpc.sql:ro
+      - ./scripts/notifications.sql:/docker-entrypoint-initdb.d/03-notifications.sql:ro
     networks:
       - dongato-network
     healthcheck:
@@ -69,6 +70,26 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+
+  # ==============================================================================
+  # 4. Outbox Email Notifier Microservice (Resend API)
+  # ==============================================================================
+  notifier:
+    build:
+      context: ./notifier
+    container_name: dongato-notifier
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgres://postgres:${DB_PASSWORD:-dongato_secure_password_replace_in_prod}@db:5432/${DB_NAME:-dongato}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - EMAIL_FROM=${EMAIL_FROM:-دنگاتو <dongato@noxt.ir>}
+      - APP_BASE_URL=${APP_BASE_URL:-https://dongato.noxt.ir}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - dongato-network
+
 
 networks:
   dongato-network:

@@ -1,0 +1,15 @@
+{
+  "name": "dongato-notifier",
+  "version": "1.0.0",
+  "description": "Asynchronous outbox email notification engine for Dongato",
+  "main": "worker.js",
+  "type": "module",
+  "scripts": {
+    "start": "node worker.js"
+  },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "resend": "^3.2.0"
+  },
+  "private": true
+}
