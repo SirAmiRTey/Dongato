@@ -147,29 +147,49 @@ export function App() {
   );
 
   // Load Room Data
-  const loadRoom = useCallback(async (roomIdToLoad: string) => {
-    setIsLoadingBundle(true);
-    try {
-      const bundle = await fetchRoomBundle(roomIdToLoad);
-      setRoom(bundle.room);
-      setMembers(bundle.members);
-      setExpenses(bundle.expenses);
-      setSettlements(bundle.settlements);
-      setActivityLogs(bundle.activityLogs);
+  const loadRoom = useCallback(
+    async (roomIdToLoad: string, silent = false) => {
+      if (!silent) setIsLoadingBundle(true);
+      try {
+        const bundle = await fetchRoomBundle(roomIdToLoad);
+        setRoom(bundle.room);
+        setMembers(bundle.members);
+        setExpenses(bundle.expenses);
+        setSettlements(bundle.settlements);
+        setActivityLogs(bundle.activityLogs);
 
-      const savedMemberId = localStorage.getItem(STORAGE_KEYS.MEMBER_ID);
-      const memberExists = bundle.members.some((m) => m.id === currentUserId || m.id === savedMemberId);
-      if (savedMemberId && bundle.members.some((m) => m.id === savedMemberId)) {
-        handleSetCurrentUser(savedMemberId);
-      } else if (!memberExists && bundle.members.length > 0) {
-        handleSetCurrentUser(bundle.members[0].id);
+        const savedMemberId = localStorage.getItem(STORAGE_KEYS.MEMBER_ID);
+        const memberExists = bundle.members.some((m) => m.id === currentUserId || m.id === savedMemberId);
+        if (savedMemberId && bundle.members.some((m) => m.id === savedMemberId)) {
+          handleSetCurrentUser(savedMemberId);
+        } else if (!memberExists && bundle.members.length > 0) {
+          handleSetCurrentUser(bundle.members[0].id);
+        }
+        return bundle;
+      } catch (err: any) {
+        if (!silent) {
+          showToast(err?.message || 'خطا در بارگذاری اطلاعات اتاق', 'error');
+        }
+        throw err;
+      } finally {
+        if (!silent) setIsLoadingBundle(false);
       }
+    },
+    [currentUserId, showToast]
+  );
+
+  // Manual refresh triggered by user from RoomHeader (calls fetchRoomBundle & fetchUserRooms)
+  const handleManualRefresh = useCallback(async () => {
+    if (!room.id) return;
+    try {
+      const p1 = loadRoom(room.id, true);
+      const p2 = authUser ? refreshUserRooms(authUser) : Promise.resolve([]);
+      await Promise.all([p1, p2]);
+      showToast('اطلاعات اتاق با موفقیت به‌روزرسانی شد.', 'info');
     } catch (err: any) {
-      showToast(err?.message || 'خطا در بارگذاری اطلاعات اتاق', 'error');
-    } finally {
-      setIsLoadingBundle(false);
+      showToast('خطا در به‌روزرسانی اطلاعات اتاق', 'error');
     }
-  }, [currentUserId, showToast]);
+  }, [room.id, loadRoom, authUser, refreshUserRooms, showToast]);
 
   // Check user rooms on auth state change
   useEffect(() => {
@@ -195,7 +215,7 @@ export function App() {
           localStorage.setItem(STORAGE_KEYS.ROOM_ID, only.room.id);
           localStorage.setItem(STORAGE_KEYS.MEMBER_ID, only.member.id);
           handleSetCurrentUser(only.member.id);
-          loadRoom(only.room.id);
+          loadRoom(only.room.id).catch(() => {});
         } else if (rooms.length > 1) {
           setIsMyRoomsOpen(true);
         }
@@ -213,13 +233,40 @@ export function App() {
     }
 
     const savedRoomId = localStorage.getItem(STORAGE_KEYS.ROOM_ID) || initialRoom.id;
-    loadRoom(savedRoomId);
+    loadRoom(savedRoomId).catch(() => {});
   }, [loadRoom]);
+
+  // Background polling & Window focus auto-refresh (supports self-hosted deployments without Realtime)
+  useEffect(() => {
+    if (!room.id) return;
+
+    // Smart 12-second polling interval when document is visible
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadRoom(room.id, true).catch(() => {});
+      }
+    }, 12000);
+
+    // Immediate refetch when user focuses/switches back to the tab
+    const handleFocus = () => {
+      loadRoom(room.id, true).catch(() => {});
+      if (authUser) {
+        refreshUserRooms(authUser).catch(() => {});
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [room.id, loadRoom, authUser, refreshUserRooms]);
 
   // Realtime Subscription
   const handleRealtimeRefresh = useCallback(
     (notice?: { title: string; message: string }) => {
-      loadRoom(room.id);
+      loadRoom(room.id, true).catch(() => {});
       if (notice) {
         showToast(notice.message, 'info');
       }
@@ -555,6 +602,7 @@ export function App() {
         onLogout={handleLogout}
         onOpenAdminSettings={() => setIsRoomSettingsOpen(true)}
         onExportCSV={() => exportExpensesToCSV(expenses, members, room.name)}
+        onRefresh={handleManualRefresh}
       />
 
       {/* Main Content */}

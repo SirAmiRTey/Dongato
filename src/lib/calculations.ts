@@ -11,6 +11,19 @@ export function toPersianDigits(input: string | number): string {
 }
 
 /**
+ * Bulletproof numeric helper that parses English, Persian, and Arabic numerals into an integer.
+ */
+export function parseNumericInput(raw: string): number {
+  if (!raw) return 0;
+  // Convert Persian (۰-۹) and Arabic (٠-٩) digits to standard ASCII (0-9)
+  const ascii = raw
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 1776))
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 1632))
+    .replace(/[^0-9]/g, '');
+  return parseInt(ascii, 10) || 0;
+}
+
+/**
  * Formats a numeric amount with thousands separator and Persian digits
  */
 export function formatAmount(amount: number): string {

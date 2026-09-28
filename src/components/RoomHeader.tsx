@@ -8,6 +8,7 @@ import {
   Shield,
   Download,
   Home,
+  RefreshCw,
 } from 'lucide-react';
 import type { Room, Member, AuthUser } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
@@ -20,6 +21,7 @@ interface RoomHeaderProps {
   onLogout: () => void;
   onOpenAdminSettings?: () => void;
   onExportCSV?: () => void;
+  onRefresh?: () => Promise<void> | void;
 }
 
 export const RoomHeader: React.FC<RoomHeaderProps> = ({
@@ -30,9 +32,23 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
   onLogout,
   onOpenAdminSettings,
   onExportCSV,
+  onRefresh,
 }) => {
   const [copiedCode, setCopiedCode] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const isAdmin = Boolean(currentUser?.isAdmin);
+
+  const handleRefresh = async () => {
+    if (!onRefresh || isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setTimeout(() => {
+        setIsRefreshing(false);
+      }, 700);
+    }
+  };
 
   const handleCopyInvite = () => {
     navigator.clipboard.writeText(room.inviteCode);
@@ -103,6 +119,24 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
               >
                 <Download className="w-3.5 h-3.5 text-emerald-400" />
                 <span className="hidden sm:inline">گزارش مالی</span>
+              </button>
+            )}
+
+            {/* Refresh / Sync CTA */}
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition-all shadow-sm active:scale-95 disabled:opacity-70"
+                title="بروزرسانی اطلاعات اتاق"
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 text-emerald-400 ${
+                    isRefreshing ? 'animate-spin' : ''
+                  }`}
+                />
+                <span>بروزرسانی</span>
               </button>
             )}
 

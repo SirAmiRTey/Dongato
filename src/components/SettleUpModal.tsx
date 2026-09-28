@@ -7,7 +7,11 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import type { Member, PairwiseBalance } from '../types';
-import { formatToman, toPersianDigits } from '../lib/calculations';
+import {
+  formatToman,
+  parseNumericInput,
+  formatAmount,
+} from '../lib/calculations';
 
 interface SettleUpModalProps {
   isOpen: boolean;
@@ -51,25 +55,83 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Keep receiverId in sync if initialTargetMemberId changes
+  // Keep receiverId and amount in sync when modal opens or initialTargetMemberId changes
   React.useEffect(() => {
+    if (!isOpen) return;
+
     if (initialTargetMemberId) {
       setReceiverId(initialTargetMemberId);
-      // If we owe this target member money, auto-fill the full amount
       const targetBalance = pairwiseBalances.find((b) => b.memberId === initialTargetMemberId);
       if (targetBalance && targetBalance.amount < 0) {
         setRawAmount(Math.abs(targetBalance.amount).toString());
+      } else {
+        setRawAmount('');
       }
+      setError(null);
     }
-  }, [initialTargetMemberId, pairwiseBalances]);
+  }, [isOpen, initialTargetMemberId, pairwiseBalances]);
 
-  if (!isOpen) return null;
-
+  const numericAmount = parseNumericInput(rawAmount);
   const selectedMember = members.find((m) => m.id === receiverId);
   const selectedBalance = pairwiseBalances.find((b) => b.memberId === receiverId);
   const debtAmount = selectedBalance && selectedBalance.amount < 0 ? Math.abs(selectedBalance.amount) : 0;
 
-  const numericAmount = Math.max(0, parseInt(rawAmount.replace(/[^0-9]/g, ''), 10) || 0);
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const rawVal = input.value;
+    const cursorPosition = input.selectionStart || 0;
+
+    // Count how many numeric digits were before the cursor
+    const textBeforeCursor = rawVal.slice(0, cursorPosition);
+    const digitsBeforeCursor = (textBeforeCursor.match(/[0-9۰-۹٠-٩]/g) || []).length;
+
+    const num = parseNumericInput(rawVal);
+    const nextRaw = num === 0 && !rawVal.match(/[0-9۰-۹٠-٩]/) ? '' : num.toString();
+    setRawAmount(nextRaw);
+
+    // Restore cursor position seamlessly in the formatted value
+    requestAnimationFrame(() => {
+      if (!input) return;
+      const formatted = num > 0 ? formatAmount(num) : '';
+      let targetCursor = 0;
+      let count = 0;
+      for (let i = 0; i < formatted.length; i++) {
+        if (/[0-9۰-۹٠-٩]/.test(formatted[i])) {
+          count++;
+          if (count === digitsBeforeCursor) {
+            targetCursor = i + 1;
+            break;
+          }
+        }
+      }
+      if (digitsBeforeCursor === 0) {
+        targetCursor = 0;
+      } else if (count < digitsBeforeCursor) {
+        targetCursor = formatted.length;
+      }
+      try {
+        input.setSelectionRange(targetCursor, targetCursor);
+      } catch {
+        // ignore
+      }
+    });
+  };
+
+  const handleAmountKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace') {
+      const input = e.currentTarget;
+      const { selectionStart, selectionEnd, value } = input;
+      if (selectionStart === selectionEnd && selectionStart !== null && selectionStart > 0) {
+        const prevChar = value[selectionStart - 1];
+        if (prevChar === ',' || prevChar === '،' || prevChar === ' ') {
+          e.preventDefault();
+          const newValue = value.slice(0, selectionStart - 2) + value.slice(selectionStart);
+          const num = parseNumericInput(newValue);
+          setRawAmount(num === 0 && !newValue.match(/[0-9۰-۹٠-٩]/) ? '' : num.toString());
+        }
+      }
+    }
+  };
 
   const handleCopyCard = (cardNumber?: string) => {
     if (!cardNumber) return;
@@ -114,6 +176,8 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
     setError(null);
     onClose();
   };
+
+  if (!isOpen) return null;
 
   return (
     <div
@@ -266,11 +330,9 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
                 type="text"
                 inputMode="numeric"
                 required
-                value={numericAmount > 0 ? toPersianDigits(new Intl.NumberFormat('en-US').format(numericAmount)) : ''}
-                onChange={(e) => {
-                  const cleaned = e.target.value.replace(/[^0-9]/g, '');
-                  setRawAmount(cleaned);
-                }}
+                value={numericAmount > 0 ? formatAmount(numericAmount) : ''}
+                onChange={handleAmountChange}
+                onKeyDown={handleAmountKeyDown}
                 placeholder="مبلغ مورد نظر برای واریز..."
                 className="w-full px-4 py-3 bg-[#0b132b] border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-base font-semibold"
               />

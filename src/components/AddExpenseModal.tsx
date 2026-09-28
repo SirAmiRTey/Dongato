@@ -1,4 +1,4 @@
-import React, { useState, useId, useRef } from 'react';
+import React, { useState, useEffect, useId, useRef, useMemo } from 'react';
 import {
   X,
   PlusCircle,
@@ -17,7 +17,13 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { Member, ExpenseCategory } from '../types';
-import { calculateSplitShares, formatToman, toPersianDigits } from '../lib/calculations';
+import {
+  calculateSplitShares,
+  formatToman,
+  toPersianDigits,
+  parseNumericInput,
+  formatAmount,
+} from '../lib/calculations';
 import { uploadReceiptImage } from '../services/api';
 
 interface AddExpenseModalProps {
@@ -65,9 +71,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   const [rawAmount, setRawAmount] = useState('');
   const [paidById, setPaidById] = useState(currentUserId);
   const [category, setCategory] = useState<ExpenseCategory>('groceries');
-  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>(
-    activeMembers.map((m) => m.id)
-  );
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
   const [receiptName, setReceiptName] = useState<string>('');
@@ -77,11 +81,78 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
 
-  if (!isOpen) return null;
+  // Rehydrate selectedMemberIds and payer when modal opens or members change
+  useEffect(() => {
+    if (isOpen) {
+      const activeMemberIds = members.filter((m) => m.isActive).map((m) => m.id);
+      setSelectedMemberIds(activeMemberIds);
+      setPaidById(currentUserId);
+    }
+  }, [isOpen, members, currentUserId]);
 
-  const numericAmount = Math.max(0, parseInt(rawAmount.replace(/[^0-9]/g, ''), 10) || 0);
-  const splits = calculateSplitShares(numericAmount, selectedMemberIds);
+  const numericAmount = parseNumericInput(rawAmount);
+  const splits = useMemo(
+    () => calculateSplitShares(numericAmount, selectedMemberIds),
+    [numericAmount, selectedMemberIds]
+  );
   const perPersonAmount = splits.length > 0 ? splits[0].amount : 0;
+
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const rawVal = input.value;
+    const cursorPosition = input.selectionStart || 0;
+
+    // Count how many numeric digits were before the cursor
+    const textBeforeCursor = rawVal.slice(0, cursorPosition);
+    const digitsBeforeCursor = (textBeforeCursor.match(/[0-9۰-۹٠-٩]/g) || []).length;
+
+    const num = parseNumericInput(rawVal);
+    const nextRaw = num === 0 && !rawVal.match(/[0-9۰-۹٠-٩]/) ? '' : num.toString();
+    setRawAmount(nextRaw);
+
+    // Restore cursor position seamlessly in the formatted value
+    requestAnimationFrame(() => {
+      if (!input) return;
+      const formatted = num > 0 ? formatAmount(num) : '';
+      let targetCursor = 0;
+      let count = 0;
+      for (let i = 0; i < formatted.length; i++) {
+        if (/[0-9۰-۹٠-٩]/.test(formatted[i])) {
+          count++;
+          if (count === digitsBeforeCursor) {
+            targetCursor = i + 1;
+            break;
+          }
+        }
+      }
+      if (digitsBeforeCursor === 0) {
+        targetCursor = 0;
+      } else if (count < digitsBeforeCursor) {
+        targetCursor = formatted.length;
+      }
+      try {
+        input.setSelectionRange(targetCursor, targetCursor);
+      } catch {
+        // ignore
+      }
+    });
+  };
+
+  const handleAmountKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace') {
+      const input = e.currentTarget;
+      const { selectionStart, selectionEnd, value } = input;
+      if (selectionStart === selectionEnd && selectionStart !== null && selectionStart > 0) {
+        const prevChar = value[selectionStart - 1];
+        if (prevChar === ',' || prevChar === '،' || prevChar === ' ') {
+          e.preventDefault();
+          const newValue = value.slice(0, selectionStart - 2) + value.slice(selectionStart);
+          const num = parseNumericInput(newValue);
+          setRawAmount(num === 0 && !newValue.match(/[0-9۰-۹٠-٩]/) ? '' : num.toString());
+        }
+      }
+    }
+  };
 
   const handleToggleMember = (id: string) => {
     setSelectedMemberIds((prev) => {
@@ -173,6 +244,8 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
     handleResetAndClose();
   };
 
+  if (!isOpen) return null;
+
   return (
     <div
       role="dialog"
@@ -241,11 +314,9 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                 type="text"
                 inputMode="numeric"
                 required
-                value={numericAmount > 0 ? toPersianDigits(new Intl.NumberFormat('en-US').format(numericAmount)) : ''}
-                onChange={(e) => {
-                  const cleaned = e.target.value.replace(/[^0-9]/g, '');
-                  setRawAmount(cleaned);
-                }}
+                value={numericAmount > 0 ? formatAmount(numericAmount) : ''}
+                onChange={handleAmountChange}
+                onKeyDown={handleAmountKeyDown}
                 placeholder="مثال: ۲۴۰,۰۰۰"
                 className="w-full px-4 py-3 bg-[#0b132b] border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all text-base font-semibold"
               />
