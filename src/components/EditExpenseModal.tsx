@@ -82,8 +82,10 @@ export const EditExpenseModal: React.FC<EditExpenseModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const wasOpenRef = useRef(false);
+
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !wasOpenRef.current) {
       if (expense) {
         setTitle(expense.title);
         setRawAmount(expense.totalAmount.toString());
@@ -108,6 +110,7 @@ export const EditExpenseModal: React.FC<EditExpenseModalProps> = ({
       setReceiptError(null);
       setError(null);
     }
+    wasOpenRef.current = isOpen;
   }, [isOpen, expense, members]);
 
   const numericAmount = parseNumericInput(rawAmount);

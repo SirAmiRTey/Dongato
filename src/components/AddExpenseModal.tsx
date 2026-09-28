@@ -81,13 +81,16 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Rehydrate selectedMemberIds and payer when modal opens or members change
+  const wasOpenRef = useRef(false);
+
+  // Initialize selectedMemberIds and payer ONLY when transitioning from closed to open
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !wasOpenRef.current) {
       const activeMemberIds = members.filter((m) => m.isActive).map((m) => m.id);
       setSelectedMemberIds(activeMemberIds);
       setPaidById(currentUserId);
     }
+    wasOpenRef.current = isOpen;
   }, [isOpen, members, currentUserId]);
 
   const numericAmount = parseNumericInput(rawAmount);

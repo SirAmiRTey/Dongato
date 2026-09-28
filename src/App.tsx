@@ -236,22 +236,34 @@ export function App() {
     loadRoom(savedRoomId).catch(() => {});
   }, [loadRoom]);
 
+  const isAnyModalOpen =
+    isAddExpenseOpen ||
+    editingExpense !== null ||
+    isSettleUpOpen ||
+    isJoinRoomOpen ||
+    isRoomSettingsOpen ||
+    isMyRoomsOpen ||
+    isAuthModalOpen;
+
   // Background polling & Window focus auto-refresh (supports self-hosted deployments without Realtime)
   useEffect(() => {
-    if (!room.id) return;
+    // Pause background polling when an interactive modal is open
+    if (!room.id || isAnyModalOpen) return;
 
-    // Smart 12-second polling interval when document is visible
+    // Smart 12-second polling interval when document is visible and no modal is active
     const intervalId = setInterval(() => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible' && !isAnyModalOpen) {
         loadRoom(room.id, true).catch(() => {});
       }
     }, 12000);
 
-    // Immediate refetch when user focuses/switches back to the tab
+    // Immediate refetch when user focuses/switches back to the tab (if no modal is open)
     const handleFocus = () => {
-      loadRoom(room.id, true).catch(() => {});
-      if (authUser) {
-        refreshUserRooms(authUser).catch(() => {});
+      if (!isAnyModalOpen) {
+        loadRoom(room.id, true).catch(() => {});
+        if (authUser) {
+          refreshUserRooms(authUser).catch(() => {});
+        }
       }
     };
 
@@ -261,7 +273,7 @@ export function App() {
       clearInterval(intervalId);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [room.id, loadRoom, authUser, refreshUserRooms]);
+  }, [room.id, isAnyModalOpen, loadRoom, authUser, refreshUserRooms]);
 
   // Realtime Subscription
   const handleRealtimeRefresh = useCallback(

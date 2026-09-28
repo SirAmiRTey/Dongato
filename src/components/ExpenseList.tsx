@@ -10,7 +10,6 @@ import {
   ChevronDown,
   ChevronUp,
   Receipt,
-  User,
   Clock,
   FileText,
   Edit2,
@@ -178,27 +177,28 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
           return (
             <div
               key={expense.id}
-              className="bg-[#141d38] border border-slate-700/60 rounded-2xl overflow-hidden hover:border-slate-600 transition-all shadow-sm"
+              className="bg-[#121b35]/70 hover:bg-[#15203f]/80 active:bg-[#162142] border border-slate-800/80 hover:border-slate-700 rounded-2xl overflow-hidden transition-all shadow-sm"
             >
-              {/* Main Card Row */}
+              {/* Main Card Header (Mobile-First 2-Row Layout) */}
               <div
                 onClick={() => toggleExpand(expense.id)}
-                className="p-4 cursor-pointer flex items-start sm:items-center justify-between gap-3 select-none"
+                className="p-3.5 sm:p-4 cursor-pointer select-none space-y-2.5"
               >
-                {/* Left: Category Icon & Details */}
-                <div className="flex items-start sm:items-center gap-3">
-                  <div
-                    className={`w-11 h-11 rounded-xl flex items-center justify-center border shrink-0 ${catMeta.bg}`}
-                  >
-                    <CategoryIcon className="w-5 h-5" />
-                  </div>
+                {/* Top Row: Category Icon + Title & Badge (Right / Start) | Total Price & Chevron (Left / End) */}
+                <div className="flex items-center justify-between gap-3">
+                  {/* Right Side: Category Icon, Title & Badge */}
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div
+                      className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center border shrink-0 ${catMeta.bg}`}
+                    >
+                      <CategoryIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </div>
 
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h4 className="text-sm font-bold text-white hover:text-emerald-400 transition-colors">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <h4 className="text-sm font-bold text-white line-clamp-1 truncate">
                         {expense.title}
                       </h4>
-                      <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-400">
+                      <span className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-md bg-slate-800/80 border border-slate-700/60 text-slate-400 shrink-0">
                         {catMeta.label}
                       </span>
                       {expense.receiptUrl && (
@@ -208,64 +208,78 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
                             e.stopPropagation();
                             setSelectedReceiptExpense(expense);
                           }}
-                          className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-semibold transition-colors"
+                          className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-semibold transition-colors shrink-0"
                           title="مشاهده فاکتور"
                         >
                           <Receipt className="w-3 h-3 text-emerald-400" />
-                          <span>فاکتور</span>
+                          <span className="hidden xs:inline">فاکتور</span>
                         </button>
                       )}
                     </div>
+                  </div>
 
-                    <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-400 flex-wrap">
-                      <span className="flex items-center gap-1">
-                        <User className="w-3 h-3 text-slate-500" />
-                        پرداخت‌کننده:{' '}
-                        <strong className="text-slate-300 font-semibold">
-                          {payer?.name} {isPayer && '(شما)'}
-                        </strong>
-                      </span>
-                      <span>•</span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-slate-500" />
-                        {formatRelativeTime(expense.createdAt)}
-                      </span>
-                      <span>•</span>
-                      <span>{toPersianDigits(expense.splits.length)} نفر سهیم</span>
+                  {/* Left Side: Total Amount & Expand Chevron */}
+                  <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                    <span className="text-base sm:text-lg font-black text-white whitespace-nowrap">
+                      {formatToman(expense.totalAmount)}
+                    </span>
+                    <div className="text-slate-400 transition-transform">
+                      {isExpanded ? (
+                        <ChevronUp className="w-4 h-4 text-emerald-400" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-slate-500" />
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* Right: Total Amount & Your Impact */}
-                <div className="text-left shrink-0 flex flex-col items-end">
-                  <div className="text-base font-extrabold text-white">
-                    {formatToman(expense.totalAmount)}
+                {/* Bottom Row: Metadata (Payer, Relative Time, Participant Count) & High-Contrast Share Pill */}
+                <div className="pt-2 sm:pt-2.5 border-t border-slate-800/60 flex items-center justify-between gap-2 text-xs flex-wrap sm:flex-nowrap">
+                  {/* Right Side: Payer, Time, Participant Count */}
+                  <div className="flex items-center gap-2 text-slate-400 text-[11px] sm:text-xs min-w-0 flex-wrap">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <div
+                        className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gradient-to-br ${
+                          payer?.color || 'from-blue-500 to-indigo-600'
+                        }`}
+                      >
+                        {payer?.name ? payer.name.slice(0, 1) : 'ک'}
+                      </div>
+                      <span className="truncate text-slate-300">
+                        پرداخت: <strong className="text-white font-semibold">{payer?.name || 'کاربر'} {isPayer && '(شما)'}</strong>
+                      </span>
+                    </div>
+
+                    <span className="text-slate-700 hidden xs:inline">•</span>
+
+                    <span className="flex items-center gap-1 text-slate-400 shrink-0">
+                      <Clock className="w-3 h-3 text-slate-500" />
+                      <span>{formatRelativeTime(expense.createdAt)}</span>
+                    </span>
+
+                    <span className="text-slate-700 hidden xs:inline">•</span>
+
+                    <span className="px-1.5 py-0.5 rounded-md bg-slate-800/80 border border-slate-700/50 text-[10px] text-slate-400 shrink-0">
+                      {toPersianDigits(expense.splits.length)} نفر
+                    </span>
                   </div>
 
-                  {/* Contextual Your Share Badge */}
-                  {isPayer ? (
-                    <span className="text-[11px] font-medium text-emerald-400 mt-0.5 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                      شما پرداخت کردید
-                    </span>
-                  ) : userSplit ? (
-                    <span className="text-[11px] font-medium text-rose-400 mt-0.5 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">
-                      سهم شما: {formatToman(userSplit.amount)}
-                    </span>
-                  ) : (
-                    <span className="text-[11px] text-slate-500 mt-0.5">بدون سهم</span>
-                  )}
-
-                  <button
-                    type="button"
-                    className="mt-1 text-slate-400 hover:text-white transition-colors"
-                    aria-label="مشاهده جزئیات دنگ"
-                  >
-                    {isExpanded ? (
-                      <ChevronUp className="w-4 h-4 text-emerald-400" />
+                  {/* Left Side: Distinct High-Contrast Share Pill */}
+                  <div className="shrink-0 mr-auto sm:mr-0">
+                    {isPayer ? (
+                      <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full whitespace-nowrap">
+                        شما پرداخت کردید
+                      </span>
+                    ) : userSplit ? (
+                      <span className="text-[11px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full whitespace-nowrap">
+                        سهم شما: {formatToman(userSplit.amount)}
+                      </span>
                     ) : (
-                      <ChevronDown className="w-4 h-4" />
+                      <span className="text-[11px] text-slate-500 px-2 py-0.5 rounded-full bg-slate-800/40 border border-slate-800 whitespace-nowrap">
+                        بدون سهم
+                      </span>
                     )}
-                  </button>
+                  </div>
                 </div>
               </div>
 
