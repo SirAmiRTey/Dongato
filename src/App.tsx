@@ -64,6 +64,7 @@ import { JoinRoomModal } from './components/JoinRoomModal';
 import { RoomSettingsModal } from './components/RoomSettingsModal';
 import { MyRoomsModal } from './components/MyRoomsModal';
 import { AuthModal } from './components/AuthModal';
+import { ProfileModal } from './components/ProfileModal';
 import { exportExpensesToCSV } from './lib/export';
 
 export function App() {
@@ -83,6 +84,7 @@ export function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isMyRoomsOpen, setIsMyRoomsOpen] = useState<boolean>(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [userRooms, setUserRooms] = useState<{ room: Room; member: Member }[]>([]);
   const [isLoadingUserRooms, setIsLoadingUserRooms] = useState<boolean>(false);
   const [joinModalTab, setJoinModalTab] = useState<'join' | 'create'>('join');
@@ -97,6 +99,7 @@ export function App() {
   const [isRoomSettingsOpen, setIsRoomSettingsOpen] = useState(false);
   const [initialJoinCode, setInitialJoinCode] = useState<string>('');
   const [settleTargetMemberId, setSettleTargetMemberId] = useState<string | undefined>(undefined);
+
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<'expenses' | 'activity' | 'members'>('expenses');
@@ -243,7 +246,9 @@ export function App() {
     isJoinRoomOpen ||
     isRoomSettingsOpen ||
     isMyRoomsOpen ||
-    isAuthModalOpen;
+    isAuthModalOpen ||
+    isProfileModalOpen;
+
 
   // Background polling & Window focus auto-refresh (supports self-hosted deployments without Realtime)
   useEffect(() => {
@@ -615,6 +620,7 @@ export function App() {
         onOpenAdminSettings={() => setIsRoomSettingsOpen(true)}
         onExportCSV={() => exportExpensesToCSV(expenses, members, room.name)}
         onRefresh={handleManualRefresh}
+        onOpenProfile={() => setIsProfileModalOpen(true)}
       />
 
       {/* Main Content */}
@@ -1024,6 +1030,27 @@ export function App() {
         currentUserId={currentUserId}
         onUpdateRoomName={handleUpdateRoomName}
         onDeactivateMember={handleDeactivateMember}
+      />
+
+      {/* User Profile & Bank Card Management Modal */}
+      <ProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        authUser={authUser}
+        onProfileUpdated={(updatedUser) => {
+          setAuthUser(updatedUser);
+          setMembers((prev) =>
+            prev.map((m) =>
+              m.userId === updatedUser.id || m.id === currentUserId
+                ? { ...m, name: updatedUser.displayName }
+                : m
+            )
+          );
+          if (authUser) {
+            refreshUserRooms(updatedUser);
+          }
+        }}
+        onShowToast={showToast}
       />
     </div>
   );

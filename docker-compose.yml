@@ -16,6 +16,7 @@ services:
       - ./supabase/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./scripts/auth-rpc.sql:/docker-entrypoint-initdb.d/02-auth-rpc.sql:ro
       - ./scripts/notifications.sql:/docker-entrypoint-initdb.d/03-notifications.sql:ro
+      - ./scripts/profile-and-cards.sql:/docker-entrypoint-initdb.d/04-profile-and-cards.sql:ro
     networks:
       - dongato-network
     healthcheck:

@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import type { AuthUser } from '../types';
+import type { AuthUser, UpdateProfileParams } from '../types';
 
 export const AUTH_STORAGE_KEY = 'dongato_auth_user';
 
@@ -252,3 +252,60 @@ export function onAuthStateChange(callback: (user: AuthUser | null) => void): ()
     window.removeEventListener('storage', handleStorage);
   };
 }
+
+/**
+ * Updates User Profile (Name, Email, Password) via PostgreSQL RPC (`update_user_profile`)
+ */
+export async function updateProfileApi(data: UpdateProfileParams): Promise<AuthUser> {
+  const cleanName = data.displayName.trim();
+  const cleanEmail = data.email.trim().toLowerCase();
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data: result, error } = await supabase.rpc('update_user_profile', {
+        p_name: cleanName,
+        p_email: cleanEmail,
+        p_current_password: data.currentPassword || null,
+        p_new_password: data.newPassword || null,
+        p_user_id: data.userId || null,
+      });
+
+      if (error) {
+        throw new Error(getPersianAuthErrorMessage(error));
+      }
+
+      if (!result) {
+        throw new Error('ویرایش پروفایل انجام نشد. لطفاً مجدداً تلاش نمایید.');
+      }
+
+      const updatedUser: AuthUser = {
+        id: String(result.id || data.userId),
+        email: String(result.email || cleanEmail),
+        displayName: String(result.displayName || result.display_name || cleanName),
+      };
+
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
+      notifyAuthStateChange(updatedUser);
+      return updatedUser;
+    } catch (err: any) {
+      throw new Error(getPersianAuthErrorMessage(err));
+    }
+  }
+
+  // Offline / LocalStorage Mock fallback
+  const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+  const current: AuthUser = saved
+    ? JSON.parse(saved)
+    : { id: data.userId || 'local-user', email: cleanEmail, displayName: cleanName };
+
+  const updatedUser: AuthUser = {
+    ...current,
+    email: cleanEmail,
+    displayName: cleanName,
+  };
+
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
+  notifyAuthStateChange(updatedUser);
+  return updatedUser;
+}
+

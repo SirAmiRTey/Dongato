@@ -6,6 +6,7 @@ import type {
   Settlement,
   ActivityLog,
   ExpenseCategory,
+  BankCard,
 } from '../types';
 import {
   initialRoom,
@@ -1090,4 +1091,245 @@ export async function fetchUserRooms(
   }
   return [{ room: bundle.room, member: bundle.members[0] }];
 }
+
+// ==============================================================================
+// 12. User Bank Card Management (PostgreSQL bank_cards / Local Fallback)
+// ==============================================================================
+
+function getLocalFallbackCards(userId: string): BankCard[] {
+  const key = `dongato_cards_${userId}`;
+  const saved = localStorage.getItem(key);
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch {
+      // ignore
+    }
+  }
+  return [];
+}
+
+function saveLocalFallbackCards(userId: string, cards: BankCard[]): void {
+  const key = `dongato_cards_${userId}`;
+  localStorage.setItem(key, JSON.stringify(cards));
+}
+
+/**
+ * Fetches all bank cards belonging to a user
+ */
+export async function fetchUserBankCards(userId: string): Promise<BankCard[]> {
+  if (!userId) return [];
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('bank_cards')
+        .select('*')
+        .eq('user_id', userId)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      return (data || []).map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        bankName: row.bank_name,
+        cardNumber: row.card_number,
+        shabaNumber: row.shaba_number || undefined,
+        cardHolderName: row.card_holder_name,
+        isDefault: Boolean(row.is_default),
+        createdAt: row.created_at,
+      }));
+    } catch (err) {
+      console.warn('[Bank Cards] Failed to fetch cards from Supabase, checking fallback:', err);
+    }
+  }
+
+  return getLocalFallbackCards(userId);
+}
+
+/**
+ * Adds a new bank card for a user
+ */
+export async function addBankCard(
+  card: Omit<BankCard, 'id' | 'createdAt'>
+): Promise<BankCard> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('bank_cards')
+        .insert({
+          user_id: card.userId,
+          bank_name: card.bankName,
+          card_number: card.cardNumber,
+          shaba_number: card.shabaNumber || null,
+          card_holder_name: card.cardHolderName,
+          is_default: Boolean(card.isDefault),
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return {
+        id: data.id,
+        userId: data.user_id,
+        bankName: data.bank_name,
+        cardNumber: data.card_number,
+        shabaNumber: data.shaba_number || undefined,
+        cardHolderName: data.card_holder_name,
+        isDefault: Boolean(data.is_default),
+        createdAt: data.created_at,
+      };
+    } catch (err) {
+      console.warn('[Bank Cards] Failed to insert card in Supabase, falling back to local storage:', err);
+    }
+  }
+
+  // Local fallback
+  const cards = getLocalFallbackCards(card.userId);
+  const isFirstCard = cards.length === 0;
+  const isDefault = isFirstCard || Boolean(card.isDefault);
+
+  if (isDefault) {
+    cards.forEach((c) => {
+      c.isDefault = false;
+    });
+  }
+
+  const newCard: BankCard = {
+    ...card,
+    id: `card-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    isDefault,
+    createdAt: new Date().toISOString(),
+  };
+
+  cards.unshift(newCard);
+  saveLocalFallbackCards(card.userId, cards);
+  return newCard;
+}
+
+/**
+ * Updates an existing bank card
+ */
+export async function updateBankCard(
+  id: string,
+  card: Partial<BankCard>,
+  userId?: string
+): Promise<BankCard> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const updatePayload: Record<string, unknown> = {};
+      if (card.bankName !== undefined) updatePayload.bank_name = card.bankName;
+      if (card.cardNumber !== undefined) updatePayload.card_number = card.cardNumber;
+      if (card.shabaNumber !== undefined) updatePayload.shaba_number = card.shabaNumber || null;
+      if (card.cardHolderName !== undefined) updatePayload.card_holder_name = card.cardHolderName;
+      if (card.isDefault !== undefined) updatePayload.is_default = card.isDefault;
+
+      const { data, error } = await supabase
+        .from('bank_cards')
+        .update(updatePayload)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return {
+        id: data.id,
+        userId: data.user_id,
+        bankName: data.bank_name,
+        cardNumber: data.card_number,
+        shabaNumber: data.shaba_number || undefined,
+        cardHolderName: data.card_holder_name,
+        isDefault: Boolean(data.is_default),
+        createdAt: data.created_at,
+      };
+    } catch (err) {
+      console.warn('[Bank Cards] Failed to update card in Supabase, falling back to local storage:', err);
+    }
+  }
+
+  // Local fallback
+  const effectiveUserId = userId || card.userId || '';
+  const cards = getLocalFallbackCards(effectiveUserId);
+  const targetIndex = cards.findIndex((c) => c.id === id);
+
+  if (targetIndex >= 0) {
+    if (card.isDefault) {
+      cards.forEach((c) => {
+        c.isDefault = false;
+      });
+    }
+    cards[targetIndex] = {
+      ...cards[targetIndex],
+      ...card,
+    };
+    saveLocalFallbackCards(effectiveUserId, cards);
+    return cards[targetIndex];
+  }
+
+  throw new Error('کارت بانکی مورد نظر یافت نشد.');
+}
+
+/**
+ * Deletes a bank card
+ */
+export async function deleteBankCard(id: string, userId?: string): Promise<void> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { error } = await supabase.from('bank_cards').delete().eq('id', id);
+      if (error) throw error;
+      return;
+    } catch (err) {
+      console.warn('[Bank Cards] Failed to delete card in Supabase, falling back to local storage:', err);
+    }
+  }
+
+  // Local fallback
+  if (userId) {
+    const cards = getLocalFallbackCards(userId).filter((c) => c.id !== id);
+    if (cards.length > 0 && !cards.some((c) => c.isDefault)) {
+      cards[0].isDefault = true;
+    }
+    saveLocalFallbackCards(userId, cards);
+  }
+}
+
+/**
+ * Sets a specific bank card as the user's default card
+ */
+export async function setDefaultBankCard(id: string, userId?: string): Promise<void> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      // Call dedicated RPC
+      const { error: rpcError } = await supabase.rpc('set_default_bank_card', {
+        p_card_id: id,
+        p_user_id: userId || null,
+      });
+
+      if (!rpcError) return;
+
+      // Fallback query if RPC isn't loaded
+      if (userId) {
+        await supabase.from('bank_cards').update({ is_default: false }).eq('user_id', userId);
+      }
+      await supabase.from('bank_cards').update({ is_default: true }).eq('id', id);
+      return;
+    } catch (err) {
+      console.warn('[Bank Cards] Failed to set default card in Supabase:', err);
+    }
+  }
+
+  // Local fallback
+  if (userId) {
+    const cards = getLocalFallbackCards(userId);
+    cards.forEach((c) => {
+      c.isDefault = c.id === id;
+    });
+    saveLocalFallbackCards(userId, cards);
+  }
+}
+
 

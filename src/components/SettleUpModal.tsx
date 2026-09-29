@@ -1,17 +1,25 @@
-import React, { useState, useId } from 'react';
+import React, { useState, useId, useEffect } from 'react';
 import {
   X,
   Copy,
   Check,
   ArrowLeftRight,
   AlertCircle,
+  CreditCard,
 } from 'lucide-react';
-import type { Member, PairwiseBalance } from '../types';
+import type { Member, PairwiseBalance, BankCard } from '../types';
 import {
   formatToman,
   parseNumericInput,
   formatAmount,
 } from '../lib/calculations';
+import {
+  detectBank,
+  formatCardNumber,
+  formatShaba,
+} from '../lib/bankUtils';
+import { fetchUserBankCards } from '../services/api';
+
 
 interface SettleUpModalProps {
   isOpen: boolean;
@@ -54,9 +62,11 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
   const [notes, setNotes] = useState('');
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [receiverCard, setReceiverCard] = useState<BankCard | null>(null);
+  const [isLoadingCard, setIsLoadingCard] = useState(false);
 
   // Keep receiverId and amount in sync when modal opens or initialTargetMemberId changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isOpen) return;
 
     if (initialTargetMemberId) {
@@ -71,10 +81,79 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
     }
   }, [isOpen, initialTargetMemberId, pairwiseBalances]);
 
+  // Query receiver's bank cards whenever receiverId or members list changes
+  useEffect(() => {
+    if (!isOpen || !receiverId) {
+      setReceiverCard(null);
+      return;
+    }
+
+    const member = members.find((m) => m.id === receiverId);
+    if (!member) {
+      setReceiverCard(null);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const fetchCard = async () => {
+      setIsLoadingCard(true);
+      try {
+        if (member.userId) {
+          const userCards = await fetchUserBankCards(member.userId);
+          if (!isCancelled && userCards.length > 0) {
+            const defaultCard = userCards.find((c) => c.isDefault) || userCards[0];
+            setReceiverCard(defaultCard);
+            return;
+          }
+        }
+
+        // Fallback to member's embedded card info if present
+        if (!isCancelled) {
+          if (member.cardNumber) {
+            setReceiverCard({
+              id: `member-${member.id}`,
+              userId: member.userId || '',
+              bankName: member.bankName || detectBank(member.cardNumber).name,
+              cardNumber: member.cardNumber,
+              cardHolderName: member.name,
+              isDefault: true,
+            });
+          } else {
+            setReceiverCard(null);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to query receiver bank card:', err);
+        if (!isCancelled && member.cardNumber) {
+          setReceiverCard({
+            id: `member-${member.id}`,
+            userId: member.userId || '',
+            bankName: member.bankName || detectBank(member.cardNumber).name,
+            cardNumber: member.cardNumber,
+            cardHolderName: member.name,
+            isDefault: true,
+          });
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingCard(false);
+        }
+      }
+    };
+
+    fetchCard();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isOpen, receiverId, members]);
+
   const numericAmount = parseNumericInput(rawAmount);
   const selectedMember = members.find((m) => m.id === receiverId);
   const selectedBalance = pairwiseBalances.find((b) => b.memberId === receiverId);
   const debtAmount = selectedBalance && selectedBalance.amount < 0 ? Math.abs(selectedBalance.amount) : 0;
+
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target;
@@ -279,34 +358,73 @@ export const SettleUpModal: React.FC<SettleUpModalProps> = ({
                 )}
               </div>
 
-              {/* Bank Card Info */}
-              {selectedMember.cardNumber && (
-                <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] text-slate-400 block">
-                      شماره کارت {selectedMember.bankName ? `(${selectedMember.bankName})` : ''}:
-                    </span>
-                    <span className="text-sm font-mono tracking-wider font-semibold text-slate-200">
-                      {selectedMember.cardNumber}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyCard(selectedMember.cardNumber)}
-                    className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-emerald-400">کپی شد</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>کپی کارت</span>
-                      </>
-                    )}
-                  </button>
+              {/* Sleek Bank Card Info Box */}
+              {isLoadingCard ? (
+                <div className="pt-2 border-t border-slate-800 flex items-center justify-center py-2 text-xs text-slate-400 gap-2">
+                  <CreditCard className="w-4 h-4 animate-pulse text-indigo-400" />
+                  <span>در حال دریافت اطلاعات کارت بانکی...</span>
+                </div>
+              ) : receiverCard ? (
+                (() => {
+                  const bank = detectBank(receiverCard.cardNumber);
+                  return (
+                    <div className="pt-3 border-t border-slate-800">
+                      <div className="p-3 rounded-xl bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 border border-slate-700/80 flex items-center justify-between gap-3 shadow-inner">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 shadow-md bg-gradient-to-tr ${bank.gradient} ${bank.textColor}`}
+                          >
+                            <CreditCard className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-white">
+                                {receiverCard.bankName || bank.name}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                ({receiverCard.cardHolderName})
+                              </span>
+                            </div>
+                            <div className="text-sm font-mono tracking-wider font-bold text-emerald-400 mt-0.5">
+                              {formatCardNumber(receiverCard.cardNumber, true)}
+                            </div>
+                            {receiverCard.shabaNumber && (
+                              <div className="text-[10px] font-mono text-slate-400 mt-0.5" dir="ltr">
+                                {formatShaba(receiverCard.shabaNumber)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleCopyCard(receiverCard.cardNumber)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all shadow-sm ${
+                            copied
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 active:scale-95'
+                          }`}
+                        >
+                          {copied ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              <span className="text-emerald-400">کپی شد</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-slate-400" />
+                              <span>کپی کارت</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="pt-2 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center gap-1.5">
+                  <CreditCard className="w-3.5 h-3.5 text-slate-500" />
+                  <span>این هم‌اتاقی هنوز کارت بانکی ثبت نکرده است.</span>
                 </div>
               )}
             </div>

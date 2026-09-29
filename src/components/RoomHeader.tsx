@@ -22,6 +22,7 @@ interface RoomHeaderProps {
   onOpenAdminSettings?: () => void;
   onExportCSV?: () => void;
   onRefresh?: () => Promise<void> | void;
+  onOpenProfile?: () => void;
 }
 
 export const RoomHeader: React.FC<RoomHeaderProps> = ({
@@ -33,6 +34,7 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
   onOpenAdminSettings,
   onExportCSV,
   onRefresh,
+  onOpenProfile,
 }) => {
   const [copiedCode, setCopiedCode] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -164,18 +166,23 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
               <span>اتاق‌های من</span>
             </button>
 
-            {/* User Profile Badge (Strict Single Identity) */}
-            <div className="flex items-center gap-2 bg-[#0b132b] px-2.5 py-1.5 rounded-xl border border-slate-700/70">
+            {/* User Profile Badge (Clickable to open ProfileModal) */}
+            <button
+              type="button"
+              onClick={onOpenProfile}
+              className="flex items-center gap-2 bg-[#0b132b] hover:bg-[#101b3d] px-2.5 py-1.5 rounded-xl border border-slate-700/70 hover:border-emerald-500/50 transition-all text-right group cursor-pointer"
+              title="مشاهده و ویرایش پروفایل و کارت‌های بانکی"
+            >
               <div
                 className={`w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-bold text-white bg-gradient-to-br ${
                   currentUser?.color || 'from-emerald-500 to-teal-600'
-                }`}
+                } group-hover:scale-105 transition-transform`}
               >
                 {initial}
               </div>
 
               <div className="flex flex-col text-right">
-                <span className="text-xs font-bold text-white max-w-[90px] sm:max-w-[120px] truncate leading-tight">
+                <span className="text-xs font-bold text-white group-hover:text-emerald-400 max-w-[90px] sm:max-w-[120px] truncate leading-tight transition-colors">
                   {displayName}
                 </span>
                 {isAdmin ? (
@@ -184,7 +191,7 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
                   <span className="text-[9px] text-slate-400 leading-tight">هم‌اتاقی</span>
                 )}
               </div>
-            </div>
+            </button>
 
             {/* Logout CTA */}
             <button

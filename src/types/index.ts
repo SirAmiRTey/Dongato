@@ -23,6 +23,26 @@ export interface AuthUser {
   displayName: string;
 }
 
+export interface BankCard {
+  id: string;
+  userId: string;
+  bankName: string;
+  cardNumber: string; // 16 digits
+  shabaNumber?: string; // Optional IBAN starting with IR
+  cardHolderName: string;
+  isDefault: boolean;
+  createdAt?: string;
+}
+
+export interface UpdateProfileParams {
+  userId?: string;
+  displayName: string;
+  email: string;
+  currentPassword?: string;
+  newPassword?: string;
+}
+
+
 export interface Member {
   id: string;
   roomId: string;
