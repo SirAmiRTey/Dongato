@@ -40,7 +40,7 @@ export const PairwiseBreakdown: React.FC<PairwiseBreakdownProps> = ({
           return (
             <div
               key={pb.memberId}
-              className={`p-4 rounded-2xl border transition-all ${
+              className={`p-4 rounded-2xl border focus-within:ring-2 focus-within:ring-indigo-500/40 transition-all ${
                 isLent
                   ? 'bg-[#141d38] border-emerald-500/30 hover:border-emerald-500/50'
                   : isOwed

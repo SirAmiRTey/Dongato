@@ -132,7 +132,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
   return (
     <div className="space-y-4">
       {/* Category Filter Pills */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs scrollbar-thin scrollbar-thumb-slate-700">
         <button
           onClick={() => setFilterCategory('all')}
           className={`px-3 py-1.5 rounded-xl shrink-0 font-medium transition-all ${
@@ -198,7 +198,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
                       <h4 className="text-sm font-bold text-white line-clamp-1 truncate">
                         {expense.title}
                       </h4>
-                      <span className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-md bg-slate-800/80 border border-slate-700/60 text-slate-400 shrink-0">
+                      <span className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-md bg-slate-800/80 border border-slate-700/60 text-slate-300 shrink-0">
                         {catMeta.label}
                       </span>
                       {expense.receiptUrl && (
@@ -236,7 +236,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
                 {/* Bottom Row: Metadata (Payer, Relative Time, Participant Count) & High-Contrast Share Pill */}
                 <div className="pt-2 sm:pt-2.5 border-t border-slate-800/60 flex items-center justify-between gap-2 text-xs flex-wrap sm:flex-nowrap">
                   {/* Right Side: Payer, Time, Participant Count */}
-                  <div className="flex items-center gap-2 text-slate-400 text-[11px] sm:text-xs min-w-0 flex-wrap">
+                  <div className="flex items-center gap-2 text-slate-300 text-[11px] sm:text-xs min-w-0 flex-wrap">
                     <div className="flex items-center gap-1.5 shrink-0">
                       <div
                         className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gradient-to-br ${
@@ -252,14 +252,14 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
 
                     <span className="text-slate-700 hidden xs:inline">•</span>
 
-                    <span className="flex items-center gap-1 text-slate-400 shrink-0">
+                    <span className="flex items-center gap-1 text-slate-300 shrink-0">
                       <Clock className="w-3 h-3 text-slate-500" />
                       <span>{formatRelativeTime(expense.createdAt)}</span>
                     </span>
 
                     <span className="text-slate-700 hidden xs:inline">•</span>
 
-                    <span className="px-1.5 py-0.5 rounded-md bg-slate-800/80 border border-slate-700/50 text-[10px] text-slate-400 shrink-0">
+                    <span className="px-1.5 py-0.5 rounded-md bg-slate-800/80 border border-slate-700/50 text-[10px] text-slate-300 shrink-0">
                       {toPersianDigits(expense.splits.length)} نفر
                     </span>
                   </div>
@@ -307,7 +307,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
                         />
                         <div>
                           <span className="text-xs font-bold text-slate-200 block">فاکتور یا رسید خرید</span>
-                          <span className="text-[10px] text-slate-400">برای بزرگ‌نمایی کلیک کنید</span>
+                          <span className="text-[10px] text-slate-300">برای بزرگ‌نمایی کلیک کنید</span>
                         </div>
                       </div>
                       <button
@@ -325,7 +325,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
                   )}
 
                   <div>
-                    <span className="text-xs font-semibold text-slate-400 block mb-2">
+                    <span className="text-xs font-semibold text-slate-300 block mb-2">
                       تفکیک سهم هر یک از اعضا:
                     </span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -360,7 +360,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
                                 {formatToman(split.amount)}
                               </span>
                               {split.percentage && (
-                                <span className="text-[10px] text-slate-400 mr-1.5">
+                                <span className="text-[10px] text-slate-300 mr-1.5">
                                   ({toPersianDigits(split.percentage)}٪)
                                 </span>
                               )}
@@ -392,6 +392,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
                           e.stopPropagation();
                           setExpensePendingDelete(expense);
                         }}
+                        aria-label={`حذف هزینه ${expense.title}`}
                         className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-medium transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -422,7 +423,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
               <strong className="text-rose-400">{formatToman(expensePendingDelete.totalAmount)}</strong> اطمینان دارید؟
             </p>
 
-            <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px] text-slate-400">
+            <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px] text-slate-300">
               با حذف این هزینه، سهم‌های محاسبه‌شده لغو گردیده و این رخداد در دفتر وقایع اتاق ثبت خواهد شد.
             </div>
 
@@ -433,6 +434,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
                   onDeleteExpense(expensePendingDelete);
                   setExpensePendingDelete(null);
                 }}
+                aria-label={`تأیید حذف هزینه ${expensePendingDelete.title}`}
                 className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs shadow-md transition-colors"
               >
                 بله، حذف کن
@@ -440,6 +442,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
               <button
                 type="button"
                 onClick={() => setExpensePendingDelete(null)}
+                aria-label="انصراف از حذف هزینه"
                 className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition-colors"
               >
                 انصراف
@@ -454,7 +457,12 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setSelectedReceiptExpense(null);
+          }}
+          ref={(el) => el?.focus()}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200 focus:outline-none"
           onClick={() => setSelectedReceiptExpense(null)}
         >
           <div
@@ -471,7 +479,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
                   <h3 className="text-sm font-bold text-white truncate">
                     رسید: {selectedReceiptExpense.title}
                   </h3>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-slate-300">
                     مبلغ: {formatToman(selectedReceiptExpense.totalAmount)}
                   </p>
                 </div>
@@ -509,7 +517,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="px-5 py-3 border-t border-slate-800 bg-[#172242] flex items-center justify-between text-xs text-slate-400">
+            <div className="px-5 py-3 border-t border-slate-800 bg-[#172242] flex items-center justify-between text-xs text-slate-300">
               <span>
                 {getMember(selectedReceiptExpense.paidById)?.name
                   ? `پرداخت‌شده توسط: ${getMember(selectedReceiptExpense.paidById)?.name}`

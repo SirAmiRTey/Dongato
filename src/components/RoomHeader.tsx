@@ -97,6 +97,7 @@ export const RoomHeader: React.FC<RoomHeaderProps> = ({
                   onClick={handleCopyInvite}
                   className="flex items-center gap-1 hover:text-emerald-400 transition-colors bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-700/60 text-[11px]"
                   title="کپی کد دعوت اتاق"
+                  aria-label="کپی کد دعوت اتاق"
                 >
                   <span>کد: {room.inviteCode}</span>
                   {copiedCode ? (

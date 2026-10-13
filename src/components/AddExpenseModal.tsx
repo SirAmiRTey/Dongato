@@ -296,7 +296,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="مثال: خرید سوپرمارکت، پیتزا، شارژ وای‌فای..."
-              className="w-full px-4 py-2.5 bg-[#0b132b] border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all text-sm"
+              className="w-full px-4 py-2.5 bg-[#0b132b] border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 focus:ring-offset-[#0b132b] transition-all text-sm"
             />
           </div>
 
@@ -321,7 +321,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                 onChange={handleAmountChange}
                 onKeyDown={handleAmountKeyDown}
                 placeholder="مثال: ۲۴۰,۰۰۰"
-                className="w-full px-4 py-3 bg-[#0b132b] border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all text-base font-semibold"
+                className="w-full px-4 py-3 bg-[#0b132b] border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 focus:ring-offset-[#0b132b] transition-all text-base font-semibold"
               />
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">
                 تومان
@@ -377,7 +377,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
             <select
               value={paidById}
               onChange={(e) => setPaidById(e.target.value)}
-              className="w-full px-4 py-2.5 bg-[#0b132b] border border-slate-700 rounded-xl text-white focus:outline-none focus:border-emerald-500 transition-all text-sm"
+              className="w-full px-4 py-2.5 bg-[#0b132b] border border-slate-700 rounded-xl text-white focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 focus:ring-offset-[#0b132b] transition-all text-sm"
             >
               {activeMembers.map((member) => (
                 <option key={member.id} value={member.id} className="bg-[#141d38] text-white">
@@ -472,7 +472,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="مثال: فاکتور در کانال گذاشته شد"
-              className="w-full px-4 py-2 bg-[#0b132b] border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-all text-xs"
+              className="w-full px-4 py-2 bg-[#0b132b] border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 focus:ring-offset-[#0b132b] transition-all text-xs"
             />
           </div>
 
@@ -571,7 +571,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
             <button
               type="submit"
               disabled={isUploadingReceipt}
-              className="flex-1 py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all"
+              className="flex-1 py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-700 disabled:text-slate-400 disabled:cursor-not-allowed text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all"
             >
               ثبت هزینه و محاسبه دنگ
             </button>

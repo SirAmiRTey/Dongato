@@ -14,6 +14,7 @@ import {
   Info,
   Loader2,
   DoorOpen,
+  Copy,
 } from 'lucide-react';
 import type {
   Room,
@@ -728,6 +729,8 @@ export function App() {
         {/* Toast Alert */}
         {toastMessage && (
           <div
+            role="status"
+            aria-live="polite"
             className={`p-3.5 rounded-2xl flex items-center gap-3 text-xs sm:text-sm font-medium animate-in fade-in slide-in-from-top-2 duration-300 shadow-xl border ${
               toastMessage.type === 'success'
                 ? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-200'
@@ -752,7 +755,7 @@ export function App() {
         ) : (
           <>
             {/* Hero Balance Cards */}
-            <section className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+            <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Net Balance Card */}
               <div className="bg-[#141d38] border border-slate-700/60 rounded-2xl p-5 shadow-lg relative overflow-hidden flex flex-col justify-between">
                 <div className="flex items-center justify-between mb-3">
@@ -1007,6 +1010,19 @@ export function App() {
                         </span>
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(room.inviteCode);
+                        showToast(`کد دعوت «${room.inviteCode}» با موفقیت کپی شد.`);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all self-start sm:self-auto cursor-pointer"
+                      title="کپی کد دعوت اتاق"
+                      aria-label="کپی کد دعوت اتاق"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>کپی کد دعوت</span>
+                    </button>
                   </div>
                 </div>
               )}
