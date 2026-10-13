@@ -34,3 +34,6 @@ lerna-debug.log*
 *.sln
 *.sw?
 *.local
+
+# Backups
+backups/

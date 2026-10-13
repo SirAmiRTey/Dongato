@@ -1,4 +1,4 @@
-import type { Member, Expense, Settlement, PairwiseBalance, UserBalanceSummary, Split } from '../types';
+import type { Member, Expense, Settlement, PairwiseBalance, UserBalanceSummary, Split, SimplifiedDebt } from '../types';
 
 /**
  * Converts English digits to Persian numerals
@@ -83,12 +83,125 @@ export function formatRelativeTime(dateInput: string | Date): string {
 }
 
 /**
- * Computes direct bilateral pairwise balances between a given user and all other members.
- * 
- * Business Rules:
- * 1. Strict Direct P2P: No graph debt simplification.
- * 2. Only confirmed settlements affect balance. Pending settlements do not.
- * 
+ * Computes net balance for each member in a room:
+ * (Total Paid + Confirmed Settlements Paid) - (Total Share + Confirmed Settlements Received)
+ * Positive balance = Creditor (owed money)
+ * Negative balance = Debtor (owes money)
+ */
+export function computeMemberNetBalances(
+  members: Member[],
+  expenses: Expense[],
+  settlements: Settlement[]
+): Map<string, number> {
+  const netBalances = new Map<string, number>();
+  for (const m of members) {
+    netBalances.set(m.id, 0);
+  }
+
+  // 1. Process expenses: payer is credited (+totalAmount), each split member is debited (-split.amount)
+  for (const expense of expenses) {
+    const currentPayerBal = netBalances.get(expense.paidById) ?? 0;
+    netBalances.set(expense.paidById, currentPayerBal + expense.totalAmount);
+
+    for (const split of expense.splits) {
+      const currentSplitBal = netBalances.get(split.memberId) ?? 0;
+      netBalances.set(split.memberId, currentSplitBal - split.amount);
+    }
+  }
+
+  // 2. Process confirmed settlements: payer gets +amount, receiver gets -amount
+  for (const settlement of settlements) {
+    if (settlement.status !== 'confirmed') {
+      continue;
+    }
+
+    const currentPayerBal = netBalances.get(settlement.payerId) ?? 0;
+    netBalances.set(settlement.payerId, currentPayerBal + settlement.amount);
+
+    const currentRecvBal = netBalances.get(settlement.receiverId) ?? 0;
+    netBalances.set(settlement.receiverId, currentRecvBal - settlement.amount);
+  }
+
+  return netBalances;
+}
+
+/**
+ * Generates simplified settlement transactions using greedy minimum-cash-flow algorithm.
+ * Matches largest debtors with largest creditors so that mutual debts are reduced to net difference.
+ */
+export function computeSimplifiedDebts(
+  members: Member[],
+  expenses: Expense[],
+  settlements: Settlement[]
+): SimplifiedDebt[] {
+  const memberMap = new Map(members.map((m) => [m.id, m]));
+  const netBalances = computeMemberNetBalances(members, expenses, settlements);
+
+  // Group into debtors (< 0) and creditors (> 0)
+  const debtors: { memberId: string; amount: number }[] = [];
+  const creditors: { memberId: string; amount: number }[] = [];
+
+  for (const [memberId, balance] of netBalances.entries()) {
+    const rounded = Math.round(balance);
+    if (rounded < 0) {
+      debtors.push({ memberId, amount: Math.abs(rounded) });
+    } else if (rounded > 0) {
+      creditors.push({ memberId, amount: rounded });
+    }
+  }
+
+  // Sort descending by magnitude for optimal greedy matching
+  debtors.sort((a, b) => b.amount - a.amount);
+  creditors.sort((a, b) => b.amount - a.amount);
+
+  const simplified: SimplifiedDebt[] = [];
+  let dIdx = 0;
+  let cIdx = 0;
+
+  while (dIdx < debtors.length && cIdx < creditors.length) {
+    const debtor = debtors[dIdx];
+    const creditor = creditors[cIdx];
+
+    if (debtor.amount <= 0) {
+      dIdx++;
+      continue;
+    }
+    if (creditor.amount <= 0) {
+      cIdx++;
+      continue;
+    }
+
+    const settleAmount = Math.min(debtor.amount, creditor.amount);
+    if (settleAmount > 0) {
+      const dMember = memberMap.get(debtor.memberId);
+      const cMember = memberMap.get(creditor.memberId);
+
+      simplified.push({
+        debtorId: debtor.memberId,
+        debtorName: dMember?.name || 'هم‌اتاقی',
+        creditorId: creditor.memberId,
+        creditorName: cMember?.name || 'هم‌اتاقی',
+        amount: settleAmount,
+      });
+
+      debtor.amount -= settleAmount;
+      creditor.amount -= settleAmount;
+
+      if (debtor.amount === 0) dIdx++;
+      if (creditor.amount === 0) cIdx++;
+    } else {
+      break;
+    }
+  }
+
+  return simplified;
+}
+
+/**
+ * Computes optimized pairwise balances for a user in the room.
+ * Resolves bidirectional debts so that if User 1 owes User 2 and User 2 owes User 1,
+ * only the net difference is shown.
+ *
  * @param currentUserId - The user whose perspective we are calculating from
  * @param members - All room members
  * @param expenses - All room expenses
@@ -102,53 +215,27 @@ export function computePairwiseBalances(
 ): PairwiseBalance[] {
   // Exclude current user from pairwise list
   const otherMembers = members.filter((m) => m.id !== currentUserId);
+  const simplifiedDebts = computeSimplifiedDebts(members, expenses, settlements);
 
   return otherMembers.map((member) => {
-    let balance = 0;
+    // Check if current user owes this member (simplified)
+    const youOwe = simplifiedDebts.find(
+      (d) => d.debtorId === currentUserId && d.creditorId === member.id
+    );
 
-    // 1. Process all expenses
-    for (const expense of expenses) {
-      // Case A: Current user paid for the expense
-      if (expense.paidById === currentUserId) {
-        const splitForMember = expense.splits.find((s) => s.memberId === member.id);
-        if (splitForMember) {
-          // Member owes current user their split amount
-          balance += splitForMember.amount;
-        }
-      }
-      // Case B: This other member paid for the expense
-      else if (expense.paidById === member.id) {
-        const splitForCurrentUser = expense.splits.find((s) => s.memberId === currentUserId);
-        if (splitForCurrentUser) {
-          // Current user owes this member their split amount
-          balance -= splitForCurrentUser.amount;
-        }
-      }
-    }
+    // Check if this member owes current user (simplified)
+    const owesYou = simplifiedDebts.find(
+      (d) => d.debtorId === member.id && d.creditorId === currentUserId
+    );
 
-    // 2. Process confirmed settlements only
-    for (const settlement of settlements) {
-      if (settlement.status !== 'confirmed') {
-        continue;
-      }
-
-      // Case A: Current user paid this member (settling debt owed to member)
-      if (settlement.payerId === currentUserId && settlement.receiverId === member.id) {
-        balance += settlement.amount;
-      }
-      // Case B: Member paid current user (settling debt owed to current user)
-      else if (settlement.payerId === member.id && settlement.receiverId === currentUserId) {
-        balance -= settlement.amount;
-      }
-    }
-
-    // Round to avoid float precision issues
-    const roundedBalance = Math.round(balance);
-
+    let amount = 0;
     let status: 'owes_you' | 'you_owe' | 'settled' = 'settled';
-    if (roundedBalance > 0) {
+
+    if (owesYou && owesYou.amount > 0) {
+      amount = owesYou.amount;
       status = 'owes_you';
-    } else if (roundedBalance < 0) {
+    } else if (youOwe && youOwe.amount > 0) {
+      amount = -youOwe.amount;
       status = 'you_owe';
     }
 
@@ -160,7 +247,7 @@ export function computePairwiseBalances(
       memberIsActive: member.isActive,
       cardNumber: member.cardNumber,
       bankName: member.bankName,
-      amount: roundedBalance,
+      amount,
       status,
     };
   });

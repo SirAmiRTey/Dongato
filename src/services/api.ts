@@ -7,6 +7,7 @@ import type {
   ActivityLog,
   ExpenseCategory,
   BankCard,
+  SimplifiedDebt,
 } from '../types';
 import {
   initialRoom,
@@ -15,7 +16,8 @@ import {
   initialSettlements,
   initialActivityLogs,
 } from '../data/mockData';
-import { formatToman } from '../lib/calculations';
+import { formatToman, computeSimplifiedDebts } from '../lib/calculations';
+
 
 export const STORAGE_KEYS = {
   ROOM_ID: 'dongato_active_room_id',
@@ -1331,5 +1333,43 @@ export async function setDefaultBankCard(id: string, userId?: string): Promise<v
     saveLocalFallbackCards(userId, cards);
   }
 }
+
+/**
+ * Fetches simplified room debts via RPC get_simplified_debts,
+ * falling back to local computation if RPC is unavailable.
+ */
+export async function getSimplifiedDebtsApi(roomId: string): Promise<SimplifiedDebt[]> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase.rpc('get_simplified_debts', {
+        p_room_id: roomId,
+      });
+
+      if (!error && Array.isArray(data)) {
+        interface RpcSimplifiedDebtRow {
+          debtor_id: string;
+          debtor_name: string;
+          creditor_id: string;
+          creditor_name: string;
+          amount: number | string;
+        }
+        return (data as RpcSimplifiedDebtRow[]).map((d) => ({
+          debtorId: d.debtor_id,
+          debtorName: d.debtor_name,
+          creditorId: d.creditor_id,
+          creditorName: d.creditor_name,
+          amount: Number(d.amount),
+        }));
+      }
+    } catch (err) {
+      console.warn('[API] get_simplified_debts RPC error, using local fallback:', err);
+    }
+  }
+
+  // Local fallback
+  const bundle = getLocalFallbackState();
+  return computeSimplifiedDebts(bundle.members, bundle.expenses, bundle.settlements);
+}
+
 
 

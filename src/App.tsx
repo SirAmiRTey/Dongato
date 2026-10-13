@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   PlusCircle,
   ArrowLeftRight,
@@ -66,6 +66,13 @@ import { MyRoomsModal } from './components/MyRoomsModal';
 import { AuthModal } from './components/AuthModal';
 import { ProfileModal } from './components/ProfileModal';
 import { exportExpensesToCSV } from './lib/export';
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  return fallback;
+}
 
 export function App() {
   // Session & Room State
@@ -149,15 +156,36 @@ export function App() {
     []
   );
 
+  // Concurrency & Mutation Guards
+  const latestFetchIdRef = useRef<number>(0);
+  const isMutatingRef = useRef<boolean>(false);
+  const lastMutationTimeRef = useRef<number>(0);
+
   // Load Room Data
   const loadRoom = useCallback(
     async (roomIdToLoad: string, silent = false) => {
+      const fetchId = ++latestFetchIdRef.current;
       if (!silent) setIsLoadingBundle(true);
       try {
         const bundle = await fetchRoomBundle(roomIdToLoad);
+
+        // Discard stale response if a newer fetch was initiated
+        if (fetchId !== latestFetchIdRef.current) {
+          return bundle;
+        }
+
         setRoom(bundle.room);
         setMembers(bundle.members);
-        setExpenses(bundle.expenses);
+
+        // Merge server expenses with any pending/optimistic local expenses to avoid flickering
+        setExpenses((prevExpenses) => {
+          const serverIds = new Set(bundle.expenses.map((e) => e.id));
+          const pendingOptimistic = prevExpenses.filter(
+            (e) => e.id.startsWith('temp-') && !serverIds.has(e.id)
+          );
+          return [...pendingOptimistic, ...bundle.expenses];
+        });
+
         setSettlements(bundle.settlements);
         setActivityLogs(bundle.activityLogs);
 
@@ -169,17 +197,20 @@ export function App() {
           handleSetCurrentUser(bundle.members[0].id);
         }
         return bundle;
-      } catch (err: any) {
-        if (!silent) {
-          showToast(err?.message || 'خطا در بارگذاری اطلاعات اتاق', 'error');
+      } catch (err: unknown) {
+        if (!silent && fetchId === latestFetchIdRef.current) {
+          showToast(getErrorMessage(err, 'خطا در بارگذاری اطلاعات اتاق'), 'error');
         }
         throw err;
       } finally {
-        if (!silent) setIsLoadingBundle(false);
+        if (!silent && fetchId === latestFetchIdRef.current) {
+          setIsLoadingBundle(false);
+        }
       }
     },
     [currentUserId, showToast]
   );
+
 
   // Manual refresh triggered by user from RoomHeader (calls fetchRoomBundle & fetchUserRooms)
   const handleManualRefresh = useCallback(async () => {
@@ -189,7 +220,7 @@ export function App() {
       const p2 = authUser ? refreshUserRooms(authUser) : Promise.resolve([]);
       await Promise.all([p1, p2]);
       showToast('اطلاعات اتاق با موفقیت به‌روزرسانی شد.', 'info');
-    } catch (err: any) {
+    } catch (_err: unknown) {
       showToast('خطا در به‌روزرسانی اطلاعات اتاق', 'error');
     }
   }, [room.id, loadRoom, authUser, refreshUserRooms, showToast]);
@@ -257,14 +288,21 @@ export function App() {
 
     // Smart 12-second polling interval when document is visible and no modal is active
     const intervalId = setInterval(() => {
-      if (document.visibilityState === 'visible' && !isAnyModalOpen) {
+      const isRecentlyMutated = Date.now() - lastMutationTimeRef.current < 4000;
+      if (
+        document.visibilityState === 'visible' &&
+        !isAnyModalOpen &&
+        !isMutatingRef.current &&
+        !isRecentlyMutated
+      ) {
         loadRoom(room.id, true).catch(() => {});
       }
     }, 12000);
 
     // Immediate refetch when user focuses/switches back to the tab (if no modal is open)
     const handleFocus = () => {
-      if (!isAnyModalOpen) {
+      const isRecentlyMutated = Date.now() - lastMutationTimeRef.current < 4000;
+      if (!isAnyModalOpen && !isMutatingRef.current && !isRecentlyMutated) {
         loadRoom(room.id, true).catch(() => {});
         if (authUser) {
           refreshUserRooms(authUser).catch(() => {});
@@ -283,6 +321,13 @@ export function App() {
   // Realtime Subscription
   const handleRealtimeRefresh = useCallback(
     (notice?: { title: string; message: string }) => {
+      const isRecentlyMutated = Date.now() - lastMutationTimeRef.current < 2500;
+      if (isMutatingRef.current || isRecentlyMutated) {
+        if (notice) {
+          showToast(notice.message, 'info');
+        }
+        return;
+      }
       loadRoom(room.id, true).catch(() => {});
       if (notice) {
         showToast(notice.message, 'info');
@@ -373,11 +418,33 @@ export function App() {
     notes?: string;
     receiptUrl?: string;
   }) => {
+    const tempId = `temp-${Date.now()}`;
+    const optimisticExpense: Expense = {
+      id: tempId,
+      roomId: room.id,
+      title: expenseData.title,
+      totalAmount: expenseData.totalAmount,
+      paidById: expenseData.paidById,
+      category: expenseData.category,
+      splits: expenseData.splits,
+      createdAt: new Date().toISOString(),
+      notes: expenseData.notes,
+      receiptUrl: expenseData.receiptUrl,
+    };
+
+    // 1. Optimistically update local state immediately
+    setExpenses((prev) => [optimisticExpense, ...prev]);
+    setIsAddExpenseOpen(false);
+
+    isMutatingRef.current = true;
+    lastMutationTimeRef.current = Date.now();
+
     try {
       const payer = members.find((m) => m.id === expenseData.paidById);
       const created = await createExpenseApi(room.id, expenseData, payer?.name || currentUser.name);
 
-      setExpenses((prev) => [created, ...prev]);
+      // 2. Seamlessly swap optimistic expense for the persisted server expense
+      setExpenses((prev) => prev.map((e) => (e.id === tempId ? created : e)));
 
       const newLog: ActivityLog = {
         id: `act-${Date.now()}`,
@@ -392,8 +459,13 @@ export function App() {
       setActivityLogs((prev) => [newLog, ...prev]);
 
       showToast(`هزینه «${expenseData.title}» ثبت و دنگ‌ها محاسبه شدند.`);
-    } catch (err: any) {
-      showToast(err?.message || 'خطا در ثبت هزینه', 'error');
+    } catch (err: unknown) {
+      // Rollback optimistic update on failure
+      setExpenses((prev) => prev.filter((e) => e.id !== tempId));
+      showToast(getErrorMessage(err, 'خطا در ثبت هزینه'), 'error');
+    } finally {
+      lastMutationTimeRef.current = Date.now();
+      isMutatingRef.current = false;
     }
   };
 
@@ -409,6 +481,9 @@ export function App() {
   }) => {
     if (!editingExpense) return;
 
+    isMutatingRef.current = true;
+    lastMutationTimeRef.current = Date.now();
+
     try {
       const updated = await updateExpenseApi(
         room.id,
@@ -422,14 +497,19 @@ export function App() {
       setExpenses((prev) => prev.map((e) => (e.id === editingExpense.id ? updated : e)));
       setEditingExpense(null);
       showToast(`تغییرات هزینه «${updated.title}» ثبت و سوابق به‌روزرسانی شد.`);
-      loadRoom(room.id);
-    } catch (err: any) {
-      showToast(err?.message || 'خطا در ویرایش هزینه', 'error');
+    } catch (err: unknown) {
+      showToast(getErrorMessage(err, 'خطا در ویرایش هزینه'), 'error');
+    } finally {
+      lastMutationTimeRef.current = Date.now();
+      isMutatingRef.current = false;
     }
   };
 
   // Handler: Delete expense (Audit Trail)
   const handleDeleteExpense = async (expense: Expense) => {
+    isMutatingRef.current = true;
+    lastMutationTimeRef.current = Date.now();
+
     try {
       await deleteExpenseApi(
         room.id,
@@ -442,9 +522,11 @@ export function App() {
 
       setExpenses((prev) => prev.filter((e) => e.id !== expense.id));
       showToast(`هزینه «${expense.title}» حذف شد.`);
-      loadRoom(room.id);
-    } catch (err: any) {
-      showToast(err?.message || 'خطا در حذف هزینه', 'error');
+    } catch (err: unknown) {
+      showToast(getErrorMessage(err, 'خطا در حذف هزینه'), 'error');
+    } finally {
+      lastMutationTimeRef.current = Date.now();
+      isMutatingRef.current = false;
     }
   };
 
@@ -454,6 +536,9 @@ export function App() {
     amount: number;
     notes?: string;
   }) => {
+    isMutatingRef.current = true;
+    lastMutationTimeRef.current = Date.now();
+
     try {
       const receiver = members.find((m) => m.id === data.receiverId);
       const created = await requestSettlementApi(
@@ -484,8 +569,11 @@ export function App() {
         `درخواست تسویه ثبت شد. پس از تأیید توسط ${receiver?.name || 'طرف مقابل'}، بدهی کسر خواهد شد.`,
         'info'
       );
-    } catch (err: any) {
-      showToast(err?.message || 'خطا در ثبت درخواست تسویه', 'error');
+    } catch (err: unknown) {
+      showToast(getErrorMessage(err, 'خطا در ثبت درخواست تسویه'), 'error');
+    } finally {
+      lastMutationTimeRef.current = Date.now();
+      isMutatingRef.current = false;
     }
   };
 
@@ -495,6 +583,9 @@ export function App() {
     if (!settlement) return;
 
     const payer = members.find((m) => m.id === settlement.payerId);
+
+    isMutatingRef.current = true;
+    lastMutationTimeRef.current = Date.now();
 
     try {
       await confirmSettlementApi(
@@ -527,8 +618,11 @@ export function App() {
       setActivityLogs((prev) => [newLog, ...prev]);
 
       showToast(`دریافت مبلغ ${formatToman(settlement.amount)} تأیید شد و تراز بدهی به‌روز گردید.`);
-    } catch (err: any) {
-      showToast(err?.message || 'خطا در تأیید تسویه', 'error');
+    } catch (err: unknown) {
+      showToast(getErrorMessage(err, 'خطا در تأیید تسویه'), 'error');
+    } finally {
+      lastMutationTimeRef.current = Date.now();
+      isMutatingRef.current = false;
     }
   };
 
@@ -538,6 +632,9 @@ export function App() {
     if (!settlement) return;
 
     const payer = members.find((m) => m.id === settlement.payerId);
+
+    isMutatingRef.current = true;
+    lastMutationTimeRef.current = Date.now();
 
     try {
       await rejectSettlementApi(
@@ -566,8 +663,11 @@ export function App() {
       setActivityLogs((prev) => [newLog, ...prev]);
 
       showToast(`درخواست تسویه رد شد.`, 'info');
-    } catch (err: any) {
-      showToast(err?.message || 'خطا در رد تسویه', 'error');
+    } catch (err: unknown) {
+      showToast(getErrorMessage(err, 'خطا در رد تسویه'), 'error');
+    } finally {
+      lastMutationTimeRef.current = Date.now();
+      isMutatingRef.current = false;
     }
   };
 
@@ -583,8 +683,8 @@ export function App() {
       );
       showToast(`نام اتاق با موفقیت به «${newName}» تغییر یافت.`);
       loadRoom(room.id);
-    } catch (err: any) {
-      showToast(err?.message || 'خطا در تغییر نام اتاق', 'error');
+    } catch (err: unknown) {
+      showToast(getErrorMessage(err, 'خطا در تغییر نام اتاق'), 'error');
     }
   };
 
@@ -595,8 +695,8 @@ export function App() {
       setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, isActive: false } : m)));
       showToast(`هم‌اتاقی «${memberName}» با موفقیت بایگانی شد.`);
       loadRoom(room.id);
-    } catch (err: any) {
-      showToast(err?.message || 'خطا در بایگانی هم‌اتاقی', 'error');
+    } catch (err: unknown) {
+      showToast(getErrorMessage(err, 'خطا در بایگانی هم‌اتاقی'), 'error');
     }
   };
 

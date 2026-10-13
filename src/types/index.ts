@@ -129,3 +129,12 @@ export interface UserBalanceSummary {
   totalOwed: number;  // بدهی کل (مجموع مبالغی که کاربر به دیگران بدهکار است)
   netBalance: number; // تراز کلی (طلب کل منهای بدهی کل)
 }
+
+export interface SimplifiedDebt {
+  debtorId: string;
+  debtorName: string;
+  creditorId: string;
+  creditorName: string;
+  amount: number;
+}
+

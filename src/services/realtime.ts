@@ -21,6 +21,23 @@ export function useRoomSubscription({
     if (!roomId) return;
 
     let channel: RealtimeChannel | null = null;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let pendingNotice: { title: string; message: string } | undefined = undefined;
+
+    const triggerDebouncedRefresh = (notice?: { title: string; message: string }) => {
+      if (notice) {
+        pendingNotice = notice;
+      }
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = setTimeout(() => {
+        const toSend = pendingNotice;
+        pendingNotice = undefined;
+        debounceTimer = null;
+        onRefreshNeeded(toSend);
+      }, 500);
+    };
 
     if (isSupabaseConfigured && supabase) {
       channel = supabase
@@ -30,14 +47,18 @@ export function useRoomSubscription({
           'postgres_changes',
           { event: '*', schema: 'public', table: 'expenses', filter: `room_id=eq.${roomId}` },
           (payload) => {
-            const isOwnChange = payload.new && (payload.new as any).paid_by_id === currentUserId;
+            const newRecord = payload.new as Record<string, unknown> | null;
+            const oldRecord = payload.old as Record<string, unknown> | null;
+            const isOwnChange =
+              (newRecord && newRecord['paid_by_id'] === currentUserId) ||
+              (oldRecord && oldRecord['paid_by_id'] === currentUserId);
+
+            // Ignore own changes (handled cleanly by local mutation handlers)
             if (!isOwnChange) {
-              onRefreshNeeded({
+              triggerDebouncedRefresh({
                 title: 'به‌روزرسانی هزینه‌ها',
                 message: 'یکی از هم‌اتاقی‌ها هزینه‌ای را ثبت یا ویرایش کرد.',
               });
-            } else {
-              onRefreshNeeded();
             }
           }
         )
@@ -46,14 +67,13 @@ export function useRoomSubscription({
           'postgres_changes',
           { event: '*', schema: 'public', table: 'settlements', filter: `room_id=eq.${roomId}` },
           (payload) => {
-            const isOwnPayer = payload.new && (payload.new as any).payer_id === currentUserId;
+            const newRecord = payload.new as Record<string, unknown> | null;
+            const isOwnPayer = newRecord && newRecord['payer_id'] === currentUserId;
             if (!isOwnPayer) {
-              onRefreshNeeded({
+              triggerDebouncedRefresh({
                 title: 'تغییر وضعیت تسویه',
                 message: 'وضعیت تسویه حسابی در اتاق تغییر یافت.',
               });
-            } else {
-              onRefreshNeeded();
             }
           }
         )
@@ -62,7 +82,7 @@ export function useRoomSubscription({
           'postgres_changes',
           { event: '*', schema: 'public', table: 'members', filter: `room_id=eq.${roomId}` },
           () => {
-            onRefreshNeeded({
+            triggerDebouncedRefresh({
               title: 'تغییرات اعضا',
               message: 'لیست یا مشخصات هم‌اتاقی‌ها به‌روزرسانی شد.',
             });
@@ -72,8 +92,12 @@ export function useRoomSubscription({
         .on(
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'activity_logs', filter: `room_id=eq.${roomId}` },
-          () => {
-            onRefreshNeeded();
+          (payload) => {
+            const newRecord = payload.new as Record<string, unknown> | null;
+            const isOwnLog = newRecord && newRecord['actor_id'] === currentUserId;
+            if (!isOwnLog) {
+              triggerDebouncedRefresh();
+            }
           }
         )
         .subscribe();
@@ -82,12 +106,15 @@ export function useRoomSubscription({
     // Cross-tab synchronization listener (for fallback and local multi-window testing)
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'dongato_fallback_bundle') {
-        onRefreshNeeded();
+        triggerDebouncedRefresh();
       }
     };
     window.addEventListener('storage', handleStorageChange);
 
     return () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
       if (channel && supabase) {
         supabase.removeChannel(channel);
       }
