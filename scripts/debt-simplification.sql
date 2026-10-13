@@ -49,7 +49,8 @@ SELECT
 FROM member_spending;
 
 -- 2. Stored Procedure / RPC: get_simplified_debts
--- Returns simplified settlement transactions (debtor -> creditor -> amount) for a room
+-- Computes strictly bilateral (pairwise) net debts between all pairs of members in a room.
+-- Does NOT shift, pool, or transfer debts across other room members.
 CREATE OR REPLACE FUNCTION get_simplified_debts(p_room_id UUID)
 RETURNS TABLE (
     debtor_id UUID,
@@ -62,81 +63,77 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-DECLARE
-    debtor_ids UUID[];
-    debtor_names TEXT[];
-    debtor_amounts BIGINT[];
-    creditor_ids UUID[];
-    creditor_names TEXT[];
-    creditor_amounts BIGINT[];
-    d_idx INT := 1;
-    c_idx INT := 1;
-    d_count INT;
-    c_count INT;
-    v_settle BIGINT;
 BEGIN
-    -- Collect debtors ordered by debt descending (most negative balance first)
+    RETURN QUERY
+    WITH pairs AS (
+        SELECT 
+            m1.id AS member_a_id,
+            m1.name AS member_a_name,
+            m2.id AS member_b_id,
+            m2.name AS member_b_name
+        FROM members m1
+        JOIN members m2 ON m1.room_id = m2.room_id AND m1.id < m2.id
+        WHERE m1.room_id = p_room_id
+    ),
+    pairwise_direct AS (
+        SELECT 
+            p.member_a_id,
+            p.member_a_name,
+            p.member_b_id,
+            p.member_b_name,
+            -- Direct expenses where A paid and B was split + confirmed settlements A paid B
+            COALESCE((
+                SELECT SUM(s.amount)
+                FROM splits s
+                JOIN expenses e ON e.id = s.expense_id
+                WHERE e.paid_by_id = p.member_a_id 
+                  AND s.member_id = p.member_b_id
+                  AND e.room_id = p_room_id
+            ), 0) +
+            COALESCE((
+                SELECT SUM(st.amount)
+                FROM settlements st
+                WHERE st.payer_id = p.member_a_id 
+                  AND st.receiver_id = p.member_b_id 
+                  AND st.status = 'confirmed'
+                  AND st.room_id = p_room_id
+            ), 0) AS a_to_b,
+            -- Direct expenses where B paid and A was split + confirmed settlements B paid A
+            COALESCE((
+                SELECT SUM(s.amount)
+                FROM splits s
+                JOIN expenses e ON e.id = s.expense_id
+                WHERE e.paid_by_id = p.member_b_id 
+                  AND s.member_id = p.member_a_id
+                  AND e.room_id = p_room_id
+            ), 0) +
+            COALESCE((
+                SELECT SUM(st.amount)
+                FROM settlements st
+                WHERE st.payer_id = p.member_b_id 
+                  AND st.receiver_id = p.member_a_id 
+                  AND st.status = 'confirmed'
+                  AND st.room_id = p_room_id
+            ), 0) AS b_to_a
+        FROM pairs p
+    ),
+    net_pairs AS (
+        SELECT 
+            member_a_id,
+            member_a_name,
+            member_b_id,
+            member_b_name,
+            (a_to_b - b_to_a)::BIGINT AS net_a_to_b
+        FROM pairwise_direct
+    )
     SELECT 
-        COALESCE(array_agg(m_id ORDER BY net_bal ASC), ARRAY[]::UUID[]),
-        COALESCE(array_agg(m_name ORDER BY net_bal ASC), ARRAY[]::TEXT[]),
-        COALESCE(array_agg((-net_bal)::BIGINT ORDER BY net_bal ASC), ARRAY[]::BIGINT[])
-    INTO debtor_ids, debtor_names, debtor_amounts
-    FROM (
-        SELECT member_id AS m_id, member_name AS m_name, net_balance AS net_bal
-        FROM view_room_net_balances
-        WHERE room_id = p_room_id AND net_balance < 0
-    ) sub_debtors;
-
-    -- Collect creditors ordered by credit descending (most positive balance first)
-    SELECT 
-        COALESCE(array_agg(m_id ORDER BY net_bal DESC), ARRAY[]::UUID[]),
-        COALESCE(array_agg(m_name ORDER BY net_bal DESC), ARRAY[]::TEXT[]),
-        COALESCE(array_agg(net_bal::BIGINT ORDER BY net_bal DESC), ARRAY[]::BIGINT[])
-    INTO creditor_ids, creditor_names, creditor_amounts
-    FROM (
-        SELECT member_id AS m_id, member_name AS m_name, net_balance AS net_bal
-        FROM view_room_net_balances
-        WHERE room_id = p_room_id AND net_balance > 0
-    ) sub_creditors;
-
-    d_count := array_length(debtor_ids, 1);
-    c_count := array_length(creditor_ids, 1);
-
-    IF d_count IS NULL OR c_count IS NULL THEN
-        RETURN;
-    END IF;
-
-    WHILE d_idx <= d_count AND c_idx <= c_count LOOP
-        IF debtor_amounts[d_idx] <= 0 THEN
-            d_idx := d_idx + 1;
-            CONTINUE;
-        END IF;
-        IF creditor_amounts[c_idx] <= 0 THEN
-            c_idx := c_idx + 1;
-            CONTINUE;
-        END IF;
-
-        v_settle := LEAST(debtor_amounts[d_idx], creditor_amounts[c_idx]);
-
-        debtor_id := debtor_ids[d_idx];
-        debtor_name := debtor_names[d_idx];
-        creditor_id := creditor_ids[c_idx];
-        creditor_name := creditor_names[c_idx];
-        amount := v_settle;
-        RETURN NEXT;
-
-        debtor_amounts[d_idx] := debtor_amounts[d_idx] - v_settle;
-        creditor_amounts[c_idx] := creditor_amounts[c_idx] - v_settle;
-
-        IF debtor_amounts[d_idx] = 0 THEN
-            d_idx := d_idx + 1;
-        END IF;
-        IF creditor_amounts[c_idx] = 0 THEN
-            c_idx := c_idx + 1;
-        END IF;
-    END LOOP;
-
-    RETURN;
+        CASE WHEN net_a_to_b < 0 THEN member_a_id ELSE member_b_id END AS debtor_id,
+        CASE WHEN net_a_to_b < 0 THEN member_a_name ELSE member_b_name END AS debtor_name,
+        CASE WHEN net_a_to_b < 0 THEN member_b_id ELSE member_a_id END AS creditor_id,
+        CASE WHEN net_a_to_b < 0 THEN member_b_name ELSE member_a_name END AS creditor_name,
+        ABS(net_a_to_b)::BIGINT AS amount
+    FROM net_pairs
+    WHERE net_a_to_b != 0;
 END;
 $$;
 
